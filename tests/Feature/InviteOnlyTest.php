@@ -9,7 +9,9 @@ use App\Models\Workspace;
 use App\Services\TwoFactor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class InviteOnlyTest extends TestCase
@@ -241,6 +243,14 @@ class InviteOnlyTest extends TestCase
         $this->postJson('/api/v1/login/code', $body)->assertJsonPath('two_factor_required', true);
         $this->postJson('/api/v1/login/code', $body + ['two_factor_code' => '000000'])->assertJsonPath('two_factor_required', true);
         $this->postJson('/api/v1/login/code', $body + ['two_factor_code' => '111111'])->assertOk()->assertJsonStructure(['token']);
+    }
+
+    public function test_an_expired_page_comes_back_instead_of_an_error_screen(): void
+    {
+        Route::post('/expired-test', fn () => throw new TokenMismatchException)->middleware('web');
+
+        $this->from('/login')->post('/expired-test')->assertRedirect('/login')->assertSessionHas('status');
+        $this->from('/login')->postJson('/expired-test')->assertStatus(419);
     }
 
     public function test_first_user_command_makes_a_verified_account_once(): void
