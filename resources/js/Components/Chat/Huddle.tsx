@@ -21,6 +21,17 @@ type VideoKind = 'camera' | 'screen';
 // The browser's resize handle sits in this corner, so a press there must not start a drag.
 const RESIZE_CORNER_PX = 20;
 
+const METER_EVERY_MS = 150;
+const SILENCE_WARNING_MS = 6000;
+const HEARD_LEVEL = 0.02;
+
+const micConstraints = (deviceId?: string): MediaTrackConstraints => ({
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+});
+
 /** What someone picked in the invite window before joining. */
 export interface HuddleChoice {
     micId: string;
@@ -82,6 +93,11 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
     const [expanded, setExpanded] = useState(false);
     const [fullScreen, setFullScreen] = useState(false);
     const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+    const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
+    const [micId, setMicId] = useState('');
+    const [micSilent, setMicSilent] = useState(false);
+    const [micRevision, setMicRevision] = useState(0);
+    const [soundBlocked, setSoundBlocked] = useState(false);
 
     const audioStream = useRef<MediaStream | null>(null);
     const localTrack = useRef<MediaStreamTrack | null>(null);
@@ -92,6 +108,9 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
     const speaker = useRef('');
     const stage = useRef<HTMLElement>(null);
     const grab = useRef<{ x: number; y: number } | null>(null);
+    const meter = useRef<HTMLSpanElement>(null);
+    const mutedRef = useRef(false);
+    mutedRef.current = muted;
     const room = `huddle.${channelId}`;
 
     const closePeer = (id: number) => {
@@ -166,10 +185,11 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
         setError(null);
         setStarting(true);
         speaker.current = choice?.speakerId ?? '';
+        setMicId(choice?.micId ?? '');
 
         try {
             audioStream.current = await navigator.mediaDevices.getUserMedia({
-                audio: choice?.micId ? { deviceId: { exact: choice.micId } } : true,
+                audio: micConstraints(choice?.micId),
             });
         } catch {
             setError('Microphone access is needed for a huddle.');
@@ -225,6 +245,7 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
                 element.autoplay = true;
                 element.srcObject = new MediaStream([track]);
                 if (speaker.current) element.setSinkId?.(speaker.current).catch(() => {});
+                element.play().catch(() => setSoundBlocked(true));
                 audio.current.set(id, element);
                 document.body.appendChild(element);
             };
@@ -300,6 +321,64 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
             track.enabled = muted;
         });
         setMuted(!muted);
+    };
+
+    // Shows whether the microphone really picks anything up, which nothing else on screen can tell you.
+    useEffect(() => {
+        const stream = audioStream.current;
+        if (!active || !stream) return;
+
+        navigator.mediaDevices
+            .enumerateDevices()
+            .then((found) => setMics(found.filter((device) => device.kind === 'audioinput' && device.deviceId !== '')))
+            .catch(() => setMics([]));
+
+        const sound = new AudioContext();
+        const analyser = sound.createAnalyser();
+        const samples = new Uint8Array(analyser.fftSize);
+        sound.createMediaStreamSource(stream).connect(analyser);
+        sound.resume().catch(() => {});
+        let lastHeard = Date.now();
+
+        const timer = window.setInterval(() => {
+            analyser.getByteTimeDomainData(samples);
+            const level = samples.reduce((loudest, sample) => Math.max(loudest, Math.abs(sample - 128) / 128), 0);
+
+            if (meter.current) meter.current.style.width = `${mutedRef.current ? 0 : Math.min(100, level * 250)}%`;
+            if (mutedRef.current || level > HEARD_LEVEL) lastHeard = Date.now();
+            setMicSilent(Date.now() - lastHeard > SILENCE_WARNING_MS);
+        }, METER_EVERY_MS);
+
+        return () => {
+            window.clearInterval(timer);
+            sound.close();
+            setMicSilent(false);
+        };
+    }, [active, micRevision]);
+
+    const changeMic = async (id: string) => {
+        setError(null);
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(id) });
+            const [track] = stream.getAudioTracks();
+            track.enabled = !muted;
+
+            peers.current.forEach((peer) => {
+                peer.getSenders().find((sender) => sender.track?.kind === 'audio')?.replaceTrack(track);
+            });
+            audioStream.current?.getTracks().forEach((old) => old.stop());
+            audioStream.current = stream;
+            setMicId(id);
+            setMicRevision((count) => count + 1);
+        } catch {
+            setError('That microphone could not be opened.');
+        }
+    };
+
+    const turnOnSound = () => {
+        setSoundBlocked(false);
+        audio.current.forEach((element) => element.play().catch(() => setSoundBlocked(true)));
     };
 
     // Someone else's screen is meant to be read, so it opens large and shrinks again when they stop.
@@ -385,6 +464,16 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
     return (
         <>
             {error && <span className="text-xs text-red-600">{error}</span>}
+            {micSilent && (
+                <span role="alert" className="text-xs font-semibold text-red-700">
+                    Your microphone is silent. Choose another one.
+                </span>
+            )}
+            {soundBlocked && (
+                <button type="button" onClick={turnOnSound} className="rounded bg-amber-500 px-2 py-0.5 text-xs font-semibold text-slate-900">
+                    Turn on sound
+                </button>
+            )}
 
             <span className="flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-sm text-emerald-900">
                 <HeadphonesIcon className="h-4 w-4" />
@@ -392,6 +481,24 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
                 <button type="button" onClick={toggleMute} aria-pressed={muted} className={control}>
                     {muted ? 'Unmute' : 'Mute'}
                 </button>
+                <span role="img" aria-label="Microphone level" className="h-2 w-10 overflow-hidden rounded bg-emerald-200">
+                    <span ref={meter} data-mic-meter className="block h-full w-0 bg-emerald-600" />
+                </span>
+                {mics.length > 0 && (
+                    <select
+                        aria-label="Microphone"
+                        value={micId}
+                        onChange={(e) => changeMic(e.target.value)}
+                        className="w-24 truncate rounded border-emerald-200 bg-transparent py-0 pl-1 pr-5 text-xs"
+                    >
+                        <option value="">Default mic</option>
+                        {mics.map((mic, index) => (
+                            <option key={mic.deviceId} value={mic.deviceId}>
+                                {mic.label || `Microphone ${index + 1}`}
+                            </option>
+                        ))}
+                    </select>
+                )}
                 <button type="button" onClick={() => toggleVideo('camera')} aria-pressed={localKind === 'camera'} className={control}>
                     {localKind === 'camera' ? 'Stop video' : 'Video'}
                 </button>
