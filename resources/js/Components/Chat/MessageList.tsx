@@ -1,5 +1,6 @@
 import Avatar from '@/Components/Chat/Avatar';
 import EmojiDialog from '@/Components/Chat/EmojiDialog';
+import ImageViewer, { opensViewer } from '@/Components/Chat/ImageViewer';
 import {
     BookmarkIcon,
     ChatIcon,
@@ -77,11 +78,26 @@ const fileSize = (bytes: number) =>
     bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
 function Attachments({ files }: { files: MessageAttachment[] }) {
+    const [viewing, setViewing] = useState<number | null>(null);
+    const images = files.filter((file) => file.is_image);
+
     return (
         <div className="mt-1 flex flex-wrap gap-2">
+            {viewing !== null && <ImageViewer images={images} start={viewing} onClose={() => setViewing(null)} />}
             {files.map((file) =>
                 file.is_image ? (
-                    <a key={file.id} href={file.url} target="_blank" rel="noopener noreferrer" title={file.name}>
+                    <a
+                        key={file.id}
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={file.name}
+                        onClick={(e) => {
+                            if (!opensViewer(e)) return;
+                            e.preventDefault();
+                            setViewing(images.indexOf(file));
+                        }}
+                    >
                         <img
                             src={file.url}
                             alt={file.name}

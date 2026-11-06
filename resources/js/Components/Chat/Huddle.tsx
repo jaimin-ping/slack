@@ -1,7 +1,7 @@
 import { HeadphonesIcon } from '@/Components/Chat/Icons';
 import { echo } from '@/echo';
 import { ChatUser } from '@/types/chat';
-import { useEffect, useRef, useState } from 'react';
+import { PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 
 interface Props {
     channelId: number;
@@ -17,6 +17,9 @@ interface Signal {
 }
 
 type VideoKind = 'camera' | 'screen';
+
+// The browser's resize handle sits in this corner, so a press there must not start a drag.
+const RESIZE_CORNER_PX = 20;
 
 /** What someone picked in the invite window before joining. */
 export interface HuddleChoice {
@@ -78,6 +81,7 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
     const [remoteKinds, setRemoteKinds] = useState<Record<number, VideoKind | null>>({});
     const [expanded, setExpanded] = useState(false);
     const [fullScreen, setFullScreen] = useState(false);
+    const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
 
     const audioStream = useRef<MediaStream | null>(null);
     const localTrack = useRef<MediaStreamTrack | null>(null);
@@ -87,6 +91,7 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
     const announce = useRef<() => void>(() => {});
     const speaker = useRef('');
     const stage = useRef<HTMLElement>(null);
+    const grab = useRef<{ x: number; y: number } | null>(null);
     const room = `huddle.${channelId}`;
 
     const closePeer = (id: number) => {
@@ -143,6 +148,9 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
                     ? await navigator.mediaDevices.getUserMedia({ video: true })
                     : await navigator.mediaDevices.getDisplayMedia({ video: true });
             const [track] = stream.getVideoTracks();
+
+            // Keeps text sharp on a shared screen, at the cost of smooth motion.
+            if (kind === 'screen') track.contentHint = 'detail';
 
             // The browser's own "Stop sharing" button ends the track.
             track.onended = () => {
@@ -309,6 +317,37 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
         return () => document.removeEventListener('fullscreenchange', update);
     }, []);
 
+    const floating = !expanded && !fullScreen;
+
+    // A size the person dragged would otherwise stay on the window after it grows.
+    useEffect(() => {
+        if (!floating && stage.current) {
+            stage.current.style.width = '';
+            stage.current.style.height = '';
+        }
+    }, [floating]);
+
+    const startDrag = (e: ReactPointerEvent<HTMLElement>) => {
+        const box = e.currentTarget.getBoundingClientRect();
+        const onResizeHandle = e.clientX > box.right - RESIZE_CORNER_PX && e.clientY > box.bottom - RESIZE_CORNER_PX;
+
+        if (!floating || onResizeHandle || (e.target as HTMLElement).closest('button')) return;
+
+        e.currentTarget.setPointerCapture(e.pointerId);
+        grab.current = { x: e.clientX - box.left, y: e.clientY - box.top };
+        setPosition({ x: box.left, y: box.top });
+    };
+
+    const drag = (e: ReactPointerEvent<HTMLElement>) => {
+        if (!grab.current) return;
+
+        const box = e.currentTarget.getBoundingClientRect();
+        setPosition({
+            x: Math.min(Math.max(e.clientX - grab.current.x, 0), window.innerWidth - box.width),
+            y: Math.min(Math.max(e.clientY - grab.current.y, 0), window.innerHeight - box.height),
+        });
+    };
+
     const toggleFullScreen = () => {
         const change = fullScreen ? document.exitFullscreen() : stage.current?.requestFullscreen();
         change?.catch(() => setError('Full screen is not available here.'));
@@ -372,12 +411,18 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
                 <section
                     ref={stage}
                     aria-label="Huddle video"
+                    onPointerDown={startDrag}
+                    onPointerMove={drag}
+                    onPointerUp={() => {
+                        grab.current = null;
+                    }}
+                    style={floating && position ? { left: position.x, top: position.y, right: 'auto' } : undefined}
                     className={`fixed z-40 flex flex-col gap-2 bg-slate-950 p-2 shadow-2xl ${
                         fullScreen
                             ? 'inset-0'
                             : expanded
                               ? 'inset-2 rounded-xl'
-                              : 'right-4 top-28 h-72 w-[26rem] max-w-[calc(100vw-2rem)] rounded-xl'
+                              : 'right-4 top-28 h-72 min-h-40 w-[26rem] min-w-60 max-w-[calc(100vw-2rem)] cursor-move touch-none resize overflow-hidden rounded-xl'
                     }`}
                 >
                     <div className="flex items-center justify-end gap-1">

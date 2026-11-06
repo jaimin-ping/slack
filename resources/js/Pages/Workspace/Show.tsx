@@ -988,16 +988,18 @@ export default function Show({
                                 <PinIcon className="h-4 w-4" />
                             </button>
 
-                            <button
-                                type="button"
-                                onClick={() => setMembersOpen(!membersOpen)}
-                                aria-expanded={membersOpen}
-                                aria-label={`${channelMembers.length} members`}
-                                className="flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
-                            >
-                                <UsersIcon className="h-4 w-4" />
-                                {channelMembers.length}
-                            </button>
+                            {channel.type !== 'dm' && (
+                                <button
+                                    type="button"
+                                    onClick={() => setMembersOpen(!membersOpen)}
+                                    aria-expanded={membersOpen}
+                                    aria-label={`${channelMembers.length} members`}
+                                    className="flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                                >
+                                    <UsersIcon className="h-4 w-4" />
+                                    {channelMembers.length}
+                                </button>
+                            )}
 
                             {pins && (
                                 <div className="absolute right-4 top-11 z-30 max-h-96 w-80 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
@@ -1026,7 +1028,7 @@ export default function Show({
                                 </div>
                             )}
 
-                            {membersOpen && (
+                            {membersOpen && channel.type !== 'dm' && (
                                 <ul className="absolute right-4 top-11 z-30 max-h-72 w-60 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
                                     {channelMembers.map((member) => (
                                         <li

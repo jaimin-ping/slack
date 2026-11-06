@@ -1,4 +1,5 @@
 import { FileIcon } from '@/Components/Chat/Icons';
+import ImageViewer, { opensViewer } from '@/Components/Chat/ImageViewer';
 import { ensurePush, notificationState, NotificationState, requestNotifications } from '@/notify';
 import { ChatMessage, InfoPanelName, WorkspaceInfo } from '@/types/chat';
 import { Link, router, usePage } from '@inertiajs/react';
@@ -131,7 +132,9 @@ export default function InfoPanel({
     const [items, setItems] = useState<unknown[] | null>(null);
     const [failed, setFailed] = useState(false);
     const [filter, setFilter] = useState('');
+    const [viewing, setViewing] = useState<number | null>(null);
     const [reminders, setReminders] = useState<ReminderItem[]>([]);
+    const fileImages = panel === 'files' ? ((items as FileItem[] | null) ?? []).filter((item) => item.is_image) : [];
 
     useEffect(() => {
         if (panel !== 'scheduled') return;
@@ -334,6 +337,10 @@ export default function InfoPanel({
                             </div>
                         ))}
 
+                {panel === 'files' && viewing !== null && (
+                    <ImageViewer images={fileImages} start={viewing} onClose={() => setViewing(null)} />
+                )}
+
                 {panel === 'files' &&
                     (items as FileItem[] | null)?.map((item) => (
                         <a
@@ -341,6 +348,11 @@ export default function InfoPanel({
                             href={item.url}
                             target={item.is_image ? '_blank' : undefined}
                             rel="noopener noreferrer"
+                            onClick={(e) => {
+                                if (!item.is_image || !opensViewer(e)) return;
+                                e.preventDefault();
+                                setViewing(fileImages.findIndex((image) => image.id === item.id));
+                            }}
                             className="flex items-center gap-3 border-b border-slate-200 px-5 py-3 hover:bg-slate-50"
                         >
                             {item.is_image ? (
