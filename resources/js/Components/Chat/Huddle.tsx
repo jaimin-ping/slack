@@ -18,11 +18,20 @@ interface Signal {
 
 type VideoKind = 'camera' | 'screen';
 
-let pendingJoin: number | null = null;
+/** What someone picked in the invite window before joining. */
+export interface HuddleChoice {
+    micId: string;
+    speakerId: string;
+    cameraId: string;
+    muted: boolean;
+    video: boolean;
+}
+
+let pendingJoin: { channelId: number; choice: HuddleChoice } | null = null;
 
 /** Joins the huddle as soon as this conversation's huddle control appears. */
-export const requestHuddleJoin = (channelId: number) => {
-    pendingJoin = channelId;
+export const requestHuddleJoin = (channelId: number, choice: HuddleChoice) => {
+    pendingJoin = { channelId, choice };
 };
 
 // STUN finds a direct route. Networks that block direct media also need a TURN server.
@@ -39,7 +48,7 @@ function Tile({ stream, label, kind, mirrored }: { stream: MediaStream; label: s
     }, [stream]);
 
     return (
-        <figure className="relative min-h-0 overflow-hidden rounded-lg bg-slate-900">
+        <figure className="relative h-full min-h-0 overflow-hidden rounded-lg bg-slate-900">
             <video
                 ref={element}
                 autoPlay
@@ -68,6 +77,7 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
     const [remoteStreams, setRemoteStreams] = useState<Record<number, MediaStream>>({});
     const [remoteKinds, setRemoteKinds] = useState<Record<number, VideoKind | null>>({});
     const [expanded, setExpanded] = useState(false);
+    const [fullScreen, setFullScreen] = useState(false);
 
     const audioStream = useRef<MediaStream | null>(null);
     const localTrack = useRef<MediaStreamTrack | null>(null);
@@ -75,6 +85,8 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
     const peers = useRef(new Map<number, RTCPeerConnection>());
     const audio = useRef(new Map<number, HTMLAudioElement>());
     const announce = useRef<() => void>(() => {});
+    const speaker = useRef('');
+    const stage = useRef<HTMLElement>(null);
     const room = `huddle.${channelId}`;
 
     const closePeer = (id: number) => {
@@ -142,16 +154,38 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
         }
     };
 
-    const start = async () => {
+    const start = async (choice?: HuddleChoice) => {
         setError(null);
         setStarting(true);
+        speaker.current = choice?.speakerId ?? '';
 
         try {
-            audioStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioStream.current = await navigator.mediaDevices.getUserMedia({
+                audio: choice?.micId ? { deviceId: { exact: choice.micId } } : true,
+            });
         } catch {
             setError('Microphone access is needed for a huddle.');
             setStarting(false);
             return;
+        }
+
+        if (choice?.muted) {
+            audioStream.current.getAudioTracks().forEach((track) => {
+                track.enabled = false;
+            });
+            setMuted(true);
+        }
+
+        // Before connecting, so the first call already carries the camera.
+        if (choice?.video) {
+            try {
+                const camera = await navigator.mediaDevices.getUserMedia({
+                    video: choice.cameraId ? { deviceId: { exact: choice.cameraId } } : true,
+                });
+                setVideoTrack(camera.getVideoTracks()[0], 'camera');
+            } catch {
+                setError('Your camera could not be opened, so you joined with audio only.');
+            }
         }
 
         const channel = echo.join(room);
@@ -182,6 +216,7 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
                 const element = audio.current.get(id) ?? document.createElement('audio');
                 element.autoplay = true;
                 element.srcObject = new MediaStream([track]);
+                if (speaker.current) element.setSinkId?.(speaker.current).catch(() => {});
                 audio.current.set(id, element);
                 document.body.appendChild(element);
             };
@@ -245,9 +280,10 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
     };
 
     useEffect(() => {
-        if (pendingJoin !== channelId) return;
+        if (pendingJoin?.channelId !== channelId) return;
+        const { choice } = pendingJoin;
         pendingJoin = null;
-        start();
+        start(choice);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -258,13 +294,33 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
         setMuted(!muted);
     };
 
+    // Someone else's screen is meant to be read, so it opens large and shrinks again when they stop.
+    const screenSharer = Object.keys(remoteStreams).find((id) => remoteKinds[Number(id)] === 'screen');
+
+    useEffect(() => {
+        setExpanded(Boolean(screenSharer));
+        if (!screenSharer && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    }, [screenSharer]);
+
+    useEffect(() => {
+        const update = () => setFullScreen(document.fullscreenElement !== null);
+        document.addEventListener('fullscreenchange', update);
+
+        return () => document.removeEventListener('fullscreenchange', update);
+    }, []);
+
+    const toggleFullScreen = () => {
+        const change = fullScreen ? document.exitFullscreen() : stage.current?.requestFullscreen();
+        change?.catch(() => setError('Full screen is not available here.'));
+    };
+
     if (!active) {
         return (
             <span className="flex items-center gap-2">
                 {error && <span className="text-xs text-red-600">{error}</span>}
                 <button
                     type="button"
-                    onClick={start}
+                    onClick={() => start()}
                     disabled={starting}
                     className="flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
@@ -282,6 +338,9 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
         return kind ? [{ id: Number(id), stream, kind }] : [];
     });
     const showStage = tiles.length > 0 || localStream !== null;
+    const mainTile = tiles.find((tile) => tile.kind === 'screen');
+    const sideTiles = tiles.filter((tile) => tile !== mainTile);
+    const stageControl = 'rounded px-2 py-0.5 text-xs text-white/80 hover:bg-white/10';
     const control = 'rounded px-2 py-0.5 hover:bg-emerald-100';
 
     return (
@@ -311,28 +370,70 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
 
             {showStage && (
                 <section
+                    ref={stage}
                     aria-label="Huddle video"
-                    className={`fixed z-40 flex flex-col gap-2 rounded-xl bg-slate-950 p-2 shadow-2xl ${
-                        expanded ? 'inset-4' : 'right-4 top-28 h-72 w-[26rem] max-w-[calc(100vw-2rem)]'
+                    className={`fixed z-40 flex flex-col gap-2 bg-slate-950 p-2 shadow-2xl ${
+                        fullScreen
+                            ? 'inset-0'
+                            : expanded
+                              ? 'inset-2 rounded-xl'
+                              : 'right-4 top-28 h-72 w-[26rem] max-w-[calc(100vw-2rem)] rounded-xl'
                     }`}
                 >
-                    <div className="flex justify-end">
-                        <button
-                            type="button"
-                            onClick={() => setExpanded(!expanded)}
-                            className="rounded px-2 py-0.5 text-xs text-white/80 hover:bg-white/10"
-                        >
-                            {expanded ? 'Make smaller' : 'Make larger'}
+                    <div className="flex items-center justify-end gap-1">
+                        {mainTile && (
+                            <span className="mr-auto truncate px-2 text-sm text-white">{nameOf(mainTile.id)} is sharing their screen</span>
+                        )}
+                        {(expanded || fullScreen) && (
+                            <>
+                                <button type="button" onClick={toggleMute} aria-pressed={muted} className={stageControl}>
+                                    {muted ? 'Unmute' : 'Mute'}
+                                </button>
+                                <button type="button" onClick={leave} className={stageControl}>
+                                    Leave
+                                </button>
+                            </>
+                        )}
+                        <button type="button" onClick={toggleFullScreen} className={stageControl}>
+                            {fullScreen ? 'Exit full screen' : 'Full screen'}
                         </button>
-                    </div>
-                    <div className={`grid min-h-0 flex-1 gap-2 ${tiles.length + (localStream ? 1 : 0) > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                        {tiles.map((tile) => (
-                            <Tile key={tile.id} stream={tile.stream} label={nameOf(tile.id)} kind={tile.kind} mirrored={false} />
-                        ))}
-                        {localStream && localKind && (
-                            <Tile stream={localStream} label="You" kind={localKind} mirrored={localKind === 'camera'} />
+                        {!fullScreen && (
+                            <button type="button" onClick={() => setExpanded(!expanded)} className={stageControl}>
+                                {expanded ? 'Make smaller' : 'Make larger'}
+                            </button>
                         )}
                     </div>
+
+                    {mainTile ? (
+                        <div className="flex min-h-0 flex-1 gap-2">
+                            <div className="min-w-0 flex-1">
+                                <Tile stream={mainTile.stream} label={nameOf(mainTile.id)} kind={mainTile.kind} mirrored={false} />
+                            </div>
+                            {(sideTiles.length > 0 || localStream) && (
+                                <div className="flex w-44 shrink-0 flex-col gap-2 overflow-y-auto">
+                                    {sideTiles.map((tile) => (
+                                        <div key={tile.id} className="h-28 shrink-0">
+                                            <Tile stream={tile.stream} label={nameOf(tile.id)} kind={tile.kind} mirrored={false} />
+                                        </div>
+                                    ))}
+                                    {localStream && localKind && (
+                                        <div className="h-28 shrink-0">
+                                            <Tile stream={localStream} label="You" kind={localKind} mirrored={localKind === 'camera'} />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className={`grid min-h-0 flex-1 gap-2 ${tiles.length + (localStream ? 1 : 0) > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            {tiles.map((tile) => (
+                                <Tile key={tile.id} stream={tile.stream} label={nameOf(tile.id)} kind={tile.kind} mirrored={false} />
+                            ))}
+                            {localStream && localKind && (
+                                <Tile stream={localStream} label="You" kind={localKind} mirrored={localKind === 'camera'} />
+                            )}
+                        </div>
+                    )}
                 </section>
             )}
         </>

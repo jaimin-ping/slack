@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\HuddleReplied;
 use App\Events\HuddleStarted;
 use App\Events\SidebarChanged;
 use App\Models\Activity;
@@ -443,6 +444,21 @@ class ChannelController extends Controller
         abort_unless($channel->hasMember($request->user()), 403);
 
         event(new HuddleStarted($channel, $request->user()));
+
+        return response()->noContent();
+    }
+
+    /** Tells the person who rang that someone declined or is on their way. */
+    public function huddleReply(Request $request, Workspace $workspace, Channel $channel): HttpResponse
+    {
+        abort_unless($channel->hasMember($request->user()), 403);
+
+        $data = $request->validate([
+            'to' => ['required', 'integer'],
+            'status' => ['required', 'in:declined,soon'],
+        ]);
+
+        event(new HuddleReplied($channel, $request->user(), $data['to'], $data['status']));
 
         return response()->noContent();
     }

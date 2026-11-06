@@ -6,7 +6,7 @@ import {
 import CanvasPane from '@/Components/Chat/CanvasPane';
 import ChannelSettings from '@/Components/Chat/ChannelSettings';
 import Composer from '@/Components/Chat/Composer';
-import Huddle, { requestHuddleJoin } from '@/Components/Chat/Huddle';
+import Huddle, { HuddleChoice, requestHuddleJoin } from '@/Components/Chat/Huddle';
 import HuddleInvite, { HuddleCall } from '@/Components/Chat/HuddleInvite';
 import InfoPanel, { NotificationBanner } from '@/Components/Chat/InfoPanel';
 import { AnalyticsModal, AuditModal } from '@/Components/Chat/Insights';
@@ -106,6 +106,14 @@ interface Thread {
 }
 
 const TYPING_TIMEOUT_MS = 3500;
+
+interface HuddleReply {
+    to: number;
+    status: 'declined' | 'soon';
+    by: { id: number; name: string };
+}
+
+const HUDDLE_NOTE_MS = 6000;
 
 export default function Show({
     auth,
@@ -362,7 +370,9 @@ export default function Show({
         canvas: (_: { channel_id: number; version: number }) => {},
         typing: (_channelId: number, _user: ChatUser) => {},
         huddle: (_event: Omit<HuddleCall, 'place'>) => {},
+        huddleReply: (_event: HuddleReply) => {},
     });
+    const [huddleNote, setHuddleNote] = useState<string | null>(null);
     const [incomingHuddle, setIncomingHuddle] = useState<HuddleCall | null>(null);
     const [huddleJoins, setHuddleJoins] = useState(0);
     const needsAlert = (channelId: number) =>
@@ -377,9 +387,23 @@ export default function Show({
             }),
         );
 
-    const joinHuddle = (channelId: number) => {
+    useEffect(() => {
+        if (!huddleNote) return;
+        const timer = window.setTimeout(() => setHuddleNote(null), HUDDLE_NOTE_MS);
+
+        return () => window.clearTimeout(timer);
+    }, [huddleNote]);
+
+    const replyToHuddle = (call: HuddleCall, status: HuddleReply['status']) => {
         setIncomingHuddle(null);
-        requestHuddleJoin(channelId);
+        axios
+            .post(route('channels.huddle.reply', [workspace.slug, call.channel_id]), { to: call.by.id, status })
+            .catch(() => {});
+    };
+
+    const joinHuddle = (channelId: number, choice: HuddleChoice) => {
+        setIncomingHuddle(null);
+        requestHuddleJoin(channelId, choice);
 
         if (channelId === channel.id) setHuddleJoins((count) => count + 1);
         else openChannel(channelId);
@@ -399,9 +423,18 @@ export default function Show({
                     title: event.by.name,
                     body: `Started a huddle${place ? ` in ${place}` : ' with you'}`,
                     tag: `huddle-${event.channel_id}`,
-                    onClick: () => joinHuddle(event.channel_id),
+                    onClick: () => window.focus(),
                 });
             }
+        },
+        huddleReply: (event) => {
+            if (event.to !== me.id) return;
+
+            setHuddleNote(
+                event.status === 'soon'
+                    ? `${event.by.name} will be there soon`
+                    : `${event.by.name} declined the huddle`,
+            );
         },
         canvas: (event) => {
             if (event.channel_id === channel.id)
@@ -494,6 +527,9 @@ export default function Show({
                 )
                 .listen('.huddle.started', (event: Omit<HuddleCall, 'place'>) =>
                     handlers.current.huddle(event),
+                )
+                .listen('.huddle.replied', (event: HuddleReply) =>
+                    handlers.current.huddleReply(event),
                 )
                 .listen('.reaction.updated', applyReactions)
                 .listen('.message.updated', applyUpdate)
@@ -1169,9 +1205,17 @@ export default function Show({
             {incomingHuddle && (
                 <HuddleInvite
                     call={incomingHuddle}
-                    onJoin={() => joinHuddle(incomingHuddle.channel_id)}
-                    onDismiss={() => setIncomingHuddle(null)}
+                    me={me}
+                    onJoin={(choice) => joinHuddle(incomingHuddle.channel_id, choice)}
+                    onReply={(status) => replyToHuddle(incomingHuddle, status)}
+                    onTimeout={() => setIncomingHuddle(null)}
                 />
+            )}
+
+            {huddleNote && (
+                <p role="status" className="fixed right-4 top-14 z-50 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
+                    {huddleNote}
+                </p>
             )}
 
             <InviteModal

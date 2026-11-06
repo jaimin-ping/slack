@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Events\ActivityCreated;
+use App\Events\HuddleReplied;
 use App\Events\HuddleStarted;
 use App\Events\MessageSent;
 use App\Models\Activity;
@@ -1050,5 +1051,19 @@ class ChatTest extends TestCase
         $this->actingAs(User::factory()->create())->post("/w/{$this->workspace->slug}/c/{$this->general->id}/huddle")->assertForbidden();
 
         Event::assertNotDispatched(HuddleStarted::class);
+    }
+
+    public function test_answering_a_huddle_tells_the_person_who_rang(): void
+    {
+        Event::fake([HuddleReplied::class]);
+        $url = "/w/{$this->workspace->slug}/c/{$this->general->id}/huddle/reply";
+
+        $this->actingAs($this->member)->post($url, ['to' => $this->owner->id, 'status' => 'soon'])->assertNoContent();
+        $this->actingAs($this->member)->postJson($url, ['to' => $this->owner->id, 'status' => 'nonsense'])->assertUnprocessable();
+        $this->actingAs(User::factory()->create())->post($url, ['to' => $this->owner->id, 'status' => 'declined'])->assertForbidden();
+
+        Event::assertDispatchedTimes(HuddleReplied::class, 1);
+        Event::assertDispatched(HuddleReplied::class, fn (HuddleReplied $event) => $event->broadcastWith()['to'] === $this->owner->id
+            && $event->broadcastWith()['status'] === 'soon');
     }
 }
