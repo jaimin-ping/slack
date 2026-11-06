@@ -106,6 +106,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/w/{workspace:slug}/c/{channel}/command', [SlashCommandController::class, 'run'])->middleware('throttle:60,1')->name('channels.command');
         Route::post('/w/{workspace:slug}/c/{channel}/section', [WorkspaceToolsController::class, 'moveToSection'])->name('channels.section');
         Route::post('/w/{workspace:slug}/c/{channel}/read', [ChannelController::class, 'read'])->name('channels.read');
+        Route::post('/w/{workspace:slug}/c/{channel}/huddle', [ChannelController::class, 'huddle'])->middleware('throttle:20,1')->name('channels.huddle');
         Route::post('/w/{workspace:slug}/c/{channel}/star', [ChannelController::class, 'star'])->name('channels.star');
         Route::post('/w/{workspace:slug}/c/{channel}/notify', [ChannelController::class, 'notify'])->name('channels.notify');
         Route::patch('/w/{workspace:slug}/c/{channel}', [ChannelController::class, 'update'])->name('channels.update');

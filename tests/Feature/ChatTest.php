@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Events\ActivityCreated;
+use App\Events\HuddleStarted;
 use App\Events\MessageSent;
 use App\Models\Activity;
 use App\Models\Attachment;
@@ -1029,5 +1030,25 @@ class ChatTest extends TestCase
         $older = $this->actingAs($this->owner)->getJson($this->url("/c/{$this->general->id}/messages?before={$before}"))->json();
         $this->assertCount(5, $older['messages']);
         $this->assertFalse($older['hasMore']);
+    }
+
+    public function test_starting_a_huddle_rings_the_conversation(): void
+    {
+        Event::fake([HuddleStarted::class]);
+
+        $this->actingAs($this->owner)->post("/w/{$this->workspace->slug}/c/{$this->general->id}/huddle")->assertNoContent();
+
+        Event::assertDispatched(HuddleStarted::class, fn (HuddleStarted $event) => $event->channel->is($this->general)
+            && $event->user->is($this->owner)
+            && $event->broadcastWith()['by']['name'] === $this->owner->name);
+    }
+
+    public function test_only_members_can_ring_a_conversation(): void
+    {
+        Event::fake([HuddleStarted::class]);
+
+        $this->actingAs(User::factory()->create())->post("/w/{$this->workspace->slug}/c/{$this->general->id}/huddle")->assertForbidden();
+
+        Event::assertNotDispatched(HuddleStarted::class);
     }
 }

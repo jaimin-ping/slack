@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\HuddleStarted;
 use App\Events\SidebarChanged;
 use App\Models\Activity;
 use App\Models\AuditLog;
@@ -432,6 +433,16 @@ class ChannelController extends Controller
     {
         abort_unless($channel->hasMember($request->user()), 403);
         $this->markRead($channel, $request->user());
+
+        return response()->noContent();
+    }
+
+    /** Rings the other people in the conversation. */
+    public function huddle(Request $request, Workspace $workspace, Channel $channel): HttpResponse
+    {
+        abort_unless($channel->hasMember($request->user()), 403);
+
+        event(new HuddleStarted($channel, $request->user()));
 
         return response()->noContent();
     }

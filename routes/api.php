@@ -64,6 +64,7 @@ Route::prefix('api/v1')->name('api.')->group(function () {
 
         Route::scopeBindings()->prefix('/w/{workspace:slug}/c/{channel}')->group(function () {
             Route::post('/read', [ChannelController::class, 'read'])->name('read');
+            Route::post('/huddle', [ChannelController::class, 'huddle'])->middleware('throttle:20,1')->name('huddle');
             Route::post('/join', [ChannelController::class, 'join'])->name('join');
             Route::post('/leave', [ChannelController::class, 'leave'])->name('leave');
             Route::post('/mute', [ChannelController::class, 'mute'])->name('mute');

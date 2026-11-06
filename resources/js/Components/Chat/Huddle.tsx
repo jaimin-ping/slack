@@ -18,6 +18,13 @@ interface Signal {
 
 type VideoKind = 'camera' | 'screen';
 
+let pendingJoin: number | null = null;
+
+/** Joins the huddle as soon as this conversation's huddle control appears. */
+export const requestHuddleJoin = (channelId: number) => {
+    pendingJoin = channelId;
+};
+
 // STUN finds a direct route. Networks that block direct media also need a TURN server.
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 
@@ -236,6 +243,13 @@ export default function Huddle({ channelId, me, onStarted }: Props) {
                 }
             });
     };
+
+    useEffect(() => {
+        if (pendingJoin !== channelId) return;
+        pendingJoin = null;
+        start();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const toggleMute = () => {
         audioStream.current?.getAudioTracks().forEach((track) => {

@@ -6,7 +6,8 @@ import {
 import CanvasPane from '@/Components/Chat/CanvasPane';
 import ChannelSettings from '@/Components/Chat/ChannelSettings';
 import Composer from '@/Components/Chat/Composer';
-import Huddle from '@/Components/Chat/Huddle';
+import Huddle, { requestHuddleJoin } from '@/Components/Chat/Huddle';
+import HuddleInvite, { HuddleCall } from '@/Components/Chat/HuddleInvite';
 import InfoPanel, { NotificationBanner } from '@/Components/Chat/InfoPanel';
 import { AnalyticsModal, AuditModal } from '@/Components/Chat/Insights';
 import {
@@ -360,7 +361,10 @@ export default function Show({
         activity: (_: ActivityEvent) => {},
         canvas: (_: { channel_id: number; version: number }) => {},
         typing: (_channelId: number, _user: ChatUser) => {},
+        huddle: (_event: Omit<HuddleCall, 'place'>) => {},
     });
+    const [incomingHuddle, setIncomingHuddle] = useState<HuddleCall | null>(null);
+    const [huddleJoins, setHuddleJoins] = useState(0);
     const needsAlert = (channelId: number) =>
         !inDnd(me) && (document.hidden || channelId !== channel.id);
 
@@ -373,7 +377,32 @@ export default function Show({
             }),
         );
 
+    const joinHuddle = (channelId: number) => {
+        setIncomingHuddle(null);
+        requestHuddleJoin(channelId);
+
+        if (channelId === channel.id) setHuddleJoins((count) => count + 1);
+        else openChannel(channelId);
+    };
+
     handlers.current = {
+        huddle: (event) => {
+            const target = sidebar.find((c) => c.id === event.channel_id);
+
+            if (!target || target.muted || event.by.id === me.id || inDnd(me)) return;
+
+            const place = target.type === 'dm' ? null : `#${target.name}`;
+            setIncomingHuddle({ ...event, place });
+
+            if (document.hidden) {
+                showNotification({
+                    title: event.by.name,
+                    body: `Started a huddle${place ? ` in ${place}` : ' with you'}`,
+                    tag: `huddle-${event.channel_id}`,
+                    onClick: () => joinHuddle(event.channel_id),
+                });
+            }
+        },
         canvas: (event) => {
             if (event.channel_id === channel.id)
                 setCanvasVersion(event.version);
@@ -462,6 +491,9 @@ export default function Show({
             echo.private(`channel.${id}`)
                 .listen('.message.sent', (message: ChatMessage) =>
                     handlers.current.message(message),
+                )
+                .listen('.huddle.started', (event: Omit<HuddleCall, 'place'>) =>
+                    handlers.current.huddle(event),
                 )
                 .listen('.reaction.updated', applyReactions)
                 .listen('.message.updated', applyUpdate)
@@ -878,10 +910,13 @@ export default function Show({
                             <span className="ml-auto" />
 
                             <Huddle
-                                key={channel.id}
+                                key={`${channel.id}-${huddleJoins}`}
                                 channelId={channel.id}
                                 me={me}
                                 onStarted={() => {
+                                    axios
+                                        .post(route('channels.huddle', [workspace.slug, channel.id]))
+                                        .catch(() => {});
                                     send(
                                         '🎧 started a huddle. Choose Huddle in this conversation to join.',
                                         [],
@@ -1131,6 +1166,14 @@ export default function Show({
                 people={people}
                 onClose={() => setModal(null)}
             />
+            {incomingHuddle && (
+                <HuddleInvite
+                    call={incomingHuddle}
+                    onJoin={() => joinHuddle(incomingHuddle.channel_id)}
+                    onDismiss={() => setIncomingHuddle(null)}
+                />
+            )}
+
             <InviteModal
                 show={modal === 'invite'}
                 workspace={workspace}
