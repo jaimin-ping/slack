@@ -8,6 +8,7 @@ use App\Models\AuditLog;
 use App\Models\Channel;
 use App\Models\CustomEmoji;
 use App\Models\Draft;
+use App\Models\Invitation;
 use App\Models\Reminder;
 use App\Models\ScheduledMessage;
 use App\Models\SidebarSection;
@@ -257,15 +258,34 @@ class WorkspaceToolsController extends Controller
         return response()->noContent();
     }
 
+    /** Invitations nobody has used yet. */
+    public function invites(Request $request, Workspace $workspace): JsonResponse
+    {
+        $this->admin($request, $workspace);
+
+        return response()->json(
+            Invitation::pending()->where('workspace_id', $workspace->id)->latest('id')->get(['id', 'email']),
+        );
+    }
+
     public function invite(Request $request, Workspace $workspace): JsonResponse
     {
         $user = $this->admin($request, $workspace);
 
-        $data = $request->validate(['emails' => ['required', 'array', 'min:1', 'max:20'], 'emails.*' => ['required', 'email']]);
+        $data = $request->validate(['emails' => ['required', 'array', 'min:1', 'max:20'], 'emails.*' => ['required', 'email', 'max:255']]);
 
         $sent = 0;
 
-        foreach (array_unique($data['emails']) as $email) {
+        foreach (array_unique(array_map('strtolower', $data['emails'])) as $email) {
+            if ($workspace->members()->whereRaw('lower(email) = ?', [$email])->exists()) {
+                continue;
+            }
+
+            Invitation::updateOrCreate(
+                ['workspace_id' => $workspace->id, 'email' => $email],
+                ['invited_by' => $user->id, 'accepted_at' => null],
+            );
+
             try {
                 Mail::to($email)->send(new WorkspaceInvite($workspace, $user));
                 $sent++;
@@ -277,6 +297,18 @@ class WorkspaceToolsController extends Controller
         AuditLog::record($workspace, $user, 'invite.sent', "{$sent} email invites");
 
         return response()->json(['sent' => $sent]);
+    }
+
+    public function cancelInvite(Request $request, Workspace $workspace, Invitation $invitation): Response
+    {
+        $user = $this->admin($request, $workspace);
+
+        abort_unless($invitation->workspace_id === $workspace->id && ! $invitation->accepted_at, 404);
+
+        $invitation->delete();
+        AuditLog::record($workspace, $user, 'invite.cancelled', $invitation->email);
+
+        return response()->noContent();
     }
 
     public function workflows(Request $request, Workspace $workspace): JsonResponse

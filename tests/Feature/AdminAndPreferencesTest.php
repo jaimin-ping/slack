@@ -41,7 +41,7 @@ class AdminAndPreferencesTest extends TestCase
         $this->workspace = Workspace::first();
 
         foreach ([$this->admin, $this->member] as $user) {
-            $this->actingAs($user)->post('/workspaces/join', ['code' => $this->workspace->invite_code]);
+            app(\App\Services\Invitations::class)->admit($this->workspace, $user);
         }
 
         $this->workspace->members()->updateExistingPivot($this->admin->id, ['role' => 'admin']);

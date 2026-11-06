@@ -19,11 +19,11 @@ class WorkspaceInvite extends Mailable
 
     public function content(): Content
     {
-        $link = route('workspaces.invite', $this->workspace->invite_code);
+        $link = route('dashboard');
         $inviter = e($this->inviter->name);
         $workspace = e($this->workspace->name);
 
         return new Content(htmlString: "<p>{$inviter} invited you to join <strong>{$workspace}</strong> on Ping Chat.</p>"
-            .'<p><a href="'.e($link).'">Join the workspace</a></p>');
+            .'<p><a href="'.e($link).'">Open Ping Chat</a> and sign in with this email address to join.</p>');
     }
 }

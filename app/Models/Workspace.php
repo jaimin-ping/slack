@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Workspace extends Model
 {
-    protected $fillable = ['name', 'slug', 'invite_code', 'owner_id'];
+    protected $fillable = ['name', 'slug', 'owner_id'];
 
     public function members(): BelongsToMany
     {

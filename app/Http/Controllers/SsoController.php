@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Services\Invitations;
 use App\Services\SsoClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -21,9 +22,11 @@ class SsoController extends Controller
 
     private const UNCONFIRMED = 'This email already has an account. Log in with your password, then connect single sign-on in Preferences.';
 
+    private const NOT_INVITED = 'This email has not been invited. Ask a workspace admin for an invitation.';
+
     private const MOBILE_CODE_SECONDS = 120;
 
-    public function __construct(private SsoClient $sso) {}
+    public function __construct(private SsoClient $sso, private Invitations $invitations) {}
 
     public function redirect(Request $request): RedirectResponse
     {
@@ -154,7 +157,7 @@ class SsoController extends Controller
         $user = $linked ?? $this->accountFor($identity);
 
         if (! $user) {
-            return $this->fail($pending, self::UNCONFIRMED);
+            return $this->fail($pending, $this->refusal($identity));
         }
 
         $code = $this->sso->randomToken();
@@ -167,10 +170,14 @@ class SsoController extends Controller
         return $this->toApp($pending['mobile']['redirect_uri'], ['code' => $code]);
     }
 
-    /** An account for this person, or null when one exists that must not be merged silently. */
+    /** An account for this person, or null when they are not invited or one must not be merged silently. */
     private function accountFor(array $identity): ?User
     {
-        $existing = User::whereRaw('lower(email) = ?', [$identity['email']])->first();
+        $existing = $this->existing($identity);
+
+        if (! $existing && ! $this->invitations->isInvited($identity['email'])) {
+            return null;
+        }
 
         // An unconfirmed address could have been registered by anyone, so that account is not handed over.
         if ($existing && ! $existing->email_verified_at) {
@@ -183,12 +190,22 @@ class SsoController extends Controller
         return $user;
     }
 
+    private function existing(array $identity): ?User
+    {
+        return User::whereRaw('lower(email) = ?', [$identity['email']])->first();
+    }
+
+    private function refusal(array $identity): string
+    {
+        return $this->existing($identity) ? self::UNCONFIRMED : self::NOT_INVITED;
+    }
+
     private function signIn(Request $request, ?User $user, array $identity): RedirectResponse
     {
         $user ??= $this->accountFor($identity);
 
         if (! $user) {
-            return $this->backToLogin(self::UNCONFIRMED);
+            return $this->backToLogin($this->refusal($identity));
         }
 
         if ($user->two_factor_enabled) {

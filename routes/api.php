@@ -22,6 +22,8 @@ Route::post('/hooks/{token}', IncomingWebhookController::class)->middleware('thr
 // The mobile app. It reuses the web controllers and signs in with a token.
 Route::prefix('api/v1')->name('api.')->group(function () {
     Route::post('/login', [MobileAuthController::class, 'login'])->middleware('throttle:5,1')->name('login');
+    Route::post('/login/email', [MobileAuthController::class, 'sendCode'])->middleware('throttle:10,1')->name('login.email');
+    Route::post('/login/code', [MobileAuthController::class, 'loginWithCode'])->middleware('throttle:10,1')->name('login.code');
     Route::get('/sso', [MobileAuthController::class, 'sso'])->name('sso');
     Route::post('/sso/exchange', [MobileAuthController::class, 'ssoExchange'])->middleware('throttle:5,1')->name('sso.exchange');
 

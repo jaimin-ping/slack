@@ -89,7 +89,6 @@ export interface WorkspaceInfo {
     id: number;
     name: string;
     slug: string;
-    invite_code: string;
     is_owner: boolean;
     is_admin: boolean;
 }

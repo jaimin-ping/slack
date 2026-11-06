@@ -55,7 +55,7 @@ class WorkflowStepsTest extends TestCase
     private function join(string $name = 'New Person'): User
     {
         $person = User::factory()->create(['name' => $name]);
-        $this->actingAs($person)->post('/workspaces/join', ['code' => $this->workspace->invite_code]);
+        app(\App\Services\Invitations::class)->admit($this->workspace, $person);
 
         return $person;
     }

@@ -228,6 +228,7 @@ const ACTIONS: Record<string, string> = {
     'workspace.renamed': 'Workspace renamed',
     'workspace.exported': 'Workspace exported',
     'invite.sent': 'Email invites sent',
+    'invite.cancelled': 'Invite cancelled',
 };
 
 export function AuditModal({ show, workspace, onClose }: { show: boolean; workspace: WorkspaceInfo; onClose: () => void }) {

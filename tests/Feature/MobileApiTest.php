@@ -37,7 +37,7 @@ class MobileApiTest extends TestCase
 
         $this->actingAs($this->owner)->post('/workspaces', ['name' => 'Acme']);
         $this->workspace = Workspace::first();
-        $this->actingAs($this->member)->post('/workspaces/join', ['code' => $this->workspace->invite_code]);
+        app(\App\Services\Invitations::class)->admit($this->workspace, $this->member);
         $this->general = $this->workspace->channels()->first();
 
         // The set-up used web sessions; the tests below must stand on the token alone.

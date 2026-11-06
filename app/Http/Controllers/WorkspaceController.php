@@ -4,9 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
 use App\Models\Channel;
-use App\Models\Workflow;
 use App\Models\Workspace;
-use App\Services\WorkflowRunner;
+use App\Services\Invitations;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,11 +16,12 @@ use Inertia\Response;
 
 class WorkspaceController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, Invitations $invitations): Response
     {
+        $invitations->acceptFor($request->user());
+
         return Inertia::render('Dashboard', [
             'workspaces' => $request->user()->workspaces()->orderBy('name')->get(['workspaces.id', 'name', 'slug']),
-            'code' => $request->query('code'),
         ]);
     }
 
@@ -34,7 +34,6 @@ class WorkspaceController extends Controller
             $workspace = Workspace::create([
                 'name' => $data['name'],
                 'slug' => (Str::slug($data['name']) ?: 'workspace').'-'.Str::lower(Str::random(6)),
-                'invite_code' => Str::random(16),
                 'owner_id' => $user->id,
             ]);
             $workspace->members()->attach($user->id, ['role' => 'owner']);
@@ -49,34 +48,6 @@ class WorkspaceController extends Controller
 
             return $workspace;
         });
-
-        return redirect()->route('workspaces.show', $workspace->slug);
-    }
-
-    public function join(Request $request, WorkflowRunner $workflows): RedirectResponse
-    {
-        $data = $request->validate(['code' => ['required', 'string', 'max:64']]);
-        $workspace = Workspace::where('invite_code', trim($data['code']))->first();
-
-        if (! $workspace) {
-            throw ValidationException::withMessages(['code' => 'This invite code is not valid.']);
-        }
-
-        $user = $request->user();
-        $isNew = ! $workspace->hasMember($user);
-
-        DB::transaction(function () use ($workspace, $user) {
-            $workspace->members()->syncWithoutDetaching([$user->id]);
-            $workspace->channels()->where('type', Channel::PUBLIC)->get()
-                ->each(fn (Channel $channel) => $channel->members()->syncWithoutDetaching([$user->id]));
-        });
-
-        if ($isNew) {
-            AuditLog::record($workspace, $user, 'member.joined', $user->name);
-
-            Workflow::where(['workspace_id' => $workspace->id, 'trigger' => 'member_joined', 'enabled' => true])->get()
-                ->each(fn (Workflow $workflow) => $workflows->start($workflow, $user));
-        }
 
         return redirect()->route('workspaces.show', $workspace->slug);
     }

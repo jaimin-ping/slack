@@ -38,7 +38,7 @@ class ChatTest extends TestCase
 
         $this->actingAs($this->owner)->post('/workspaces', ['name' => 'Acme']);
         $this->workspace = Workspace::first();
-        $this->actingAs($this->member)->post('/workspaces/join', ['code' => $this->workspace->invite_code]);
+        app(\App\Services\Invitations::class)->admit($this->workspace, $this->member);
         $this->general = $this->workspace->channels()->where('name', 'general')->first();
     }
 
@@ -52,14 +52,6 @@ class ChatTest extends TestCase
         $this->assertTrue($this->workspace->hasMember($this->owner));
         $this->assertTrue($this->general->hasMember($this->owner));
         $this->assertTrue($this->general->hasMember($this->member));
-    }
-
-    public function test_wrong_invite_code_is_rejected(): void
-    {
-        $user = User::factory()->create();
-
-        $this->actingAs($user)->post('/workspaces/join', ['code' => 'nope'])->assertSessionHasErrors('code');
-        $this->assertSame(0, $user->workspaces()->count());
     }
 
     public function test_outsiders_cannot_read_or_post(): void
@@ -644,7 +636,7 @@ class ChatTest extends TestCase
     public function test_thread_replies_reach_participants_but_not_the_sender(): void
     {
         $third = User::factory()->create();
-        $this->actingAs($third)->post('/workspaces/join', ['code' => $this->workspace->invite_code]);
+        app(\App\Services\Invitations::class)->admit($this->workspace, $third);
 
         $parent = $this->say($this->owner, $this->general, 'parent');
         $this->say($this->member, $this->general, 'first', $parent);

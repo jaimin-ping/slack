@@ -2,7 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\Invitation;
 use App\Models\User;
+use App\Models\Workspace;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as ClientRequest;
@@ -20,6 +22,9 @@ class SsoTest extends TestCase
     /** Claims the next token will contain, on top of the sensible defaults. */
     private array $claims = [];
 
+    /** The workspace owner every test starts with, who sent the invitations. */
+    private const OWNER = 1;
+
     private ?string $sentVerifier = null;
 
     protected function setUp(): void
@@ -35,6 +40,13 @@ class SsoTest extends TestCase
             'client_secret' => 'test-secret',
             'allowed_domain' => null,
         ]]);
+
+        $owner = User::factory()->create();
+        $workspace = Workspace::create(['name' => 'Acme', 'slug' => 'acme', 'owner_id' => $owner->id]);
+
+        foreach (['asha@example.test', 'asha@acme.test'] as $email) {
+            Invitation::create(['workspace_id' => $workspace->id, 'email' => $email]);
+        }
 
         Http::fake(function (ClientRequest $request) {
             return match (true) {
@@ -138,6 +150,27 @@ class SsoTest extends TestCase
         $this->assertSame('subject-1', $user->sso_subject);
     }
 
+    public function test_someone_nobody_invited_is_turned_away(): void
+    {
+        $users = User::count();
+
+        $this->signInWith(['email' => 'stranger@example.test'])->assertRedirect('/login');
+
+        $this->assertGuest();
+        $this->assertSame($users, User::count());
+        $this->assertStringContainsString('not been invited', session('status'));
+    }
+
+    public function test_someone_nobody_invited_is_turned_away_on_the_phone_too(): void
+    {
+        $users = User::count();
+
+        $query = $this->mobileSignIn(str_repeat('v', 64), ['email' => 'stranger@example.test']);
+
+        $this->assertStringContainsString('not been invited', $query['error']);
+        $this->assertSame($users, User::count());
+    }
+
     public function test_a_returning_person_is_found_by_subject_even_after_an_email_change(): void
     {
         $this->signInWith();
@@ -146,8 +179,8 @@ class SsoTest extends TestCase
 
         $this->signInWith(['email' => 'new-name@example.test'])->assertRedirect('/dashboard');
 
-        $this->assertSame(1, User::count());
-        $this->assertAuthenticatedAs(User::first());
+        $this->assertSame(1 + self::OWNER, User::count());
+        $this->assertAuthenticatedAs(User::latest('id')->first());
     }
 
     public function test_verified_account_with_the_same_email_is_linked(): void
@@ -175,7 +208,7 @@ class SsoTest extends TestCase
         $this->signInWith([], 'forged')->assertRedirect('/login');
 
         $this->assertGuest();
-        $this->assertSame(0, User::count());
+        $this->assertSame(0 + self::OWNER, User::count());
     }
 
     public function test_a_callback_nobody_started_is_refused(): void
@@ -211,7 +244,7 @@ class SsoTest extends TestCase
             $this->signInWith($claims)->assertRedirect('/login');
 
             $this->assertGuest();
-            $this->assertSame(0, User::count(), $case);
+            $this->assertSame(self::OWNER, User::count(), $case);
         }
     }
 
@@ -242,10 +275,10 @@ class SsoTest extends TestCase
         config(['services.sso.allowed_domain' => 'acme.test']);
 
         $this->signInWith()->assertRedirect('/login');
-        $this->assertSame(0, User::count());
+        $this->assertSame(0 + self::OWNER, User::count());
 
         $this->signInWith(['email' => 'asha@acme.test'])->assertRedirect('/dashboard');
-        $this->assertSame(1, User::count());
+        $this->assertSame(1 + self::OWNER, User::count());
     }
 
     public function test_two_step_sign_in_still_applies(): void

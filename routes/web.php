@@ -35,8 +35,6 @@ Route::middleware('guest')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [WorkspaceController::class, 'index'])->name('dashboard');
     Route::post('/workspaces', [WorkspaceController::class, 'store'])->name('workspaces.store');
-    Route::post('/workspaces/join', [WorkspaceController::class, 'join'])->name('workspaces.join');
-    Route::get('/join/{code}', fn (string $code) => redirect()->route('dashboard', ['code' => $code]))->name('workspaces.invite');
 
     Route::get('/attachments/{attachment}', [AttachmentController::class, 'show'])->name('attachments.show');
     Route::get('/avatars/{user}', [AvatarController::class, 'show'])->name('avatars.show');
@@ -79,7 +77,9 @@ Route::middleware('auth')->group(function () {
     Route::delete('/w/{workspace:slug}/emoji/{emoji}', [WorkspaceToolsController::class, 'destroyEmoji'])->name('emoji.destroy');
     Route::post('/w/{workspace:slug}/sections', [WorkspaceToolsController::class, 'storeSection'])->name('sections.store');
     Route::delete('/w/{workspace:slug}/sections/{section}', [WorkspaceToolsController::class, 'destroySection'])->name('sections.destroy');
+    Route::get('/w/{workspace:slug}/invites', [WorkspaceToolsController::class, 'invites'])->name('invites.index');
     Route::post('/w/{workspace:slug}/invites', [WorkspaceToolsController::class, 'invite'])->middleware('throttle:10,1')->name('invites.store');
+    Route::delete('/w/{workspace:slug}/invites/{invitation}', [WorkspaceToolsController::class, 'cancelInvite'])->name('invites.destroy');
     Route::get('/w/{workspace:slug}/workflows', [WorkspaceToolsController::class, 'workflows'])->name('workflows.index');
     Route::post('/w/{workspace:slug}/workflows', [WorkspaceToolsController::class, 'storeWorkflow'])->name('workflows.store');
     Route::post('/w/{workspace:slug}/workflows/{workflow}/toggle', [WorkspaceToolsController::class, 'toggleWorkflow'])->name('workflows.toggle');

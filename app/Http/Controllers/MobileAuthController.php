@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\DeviceToken;
 use App\Models\User;
+use App\Services\Invitations;
+use App\Services\LoginCodes;
 use App\Services\SsoClient;
 use App\Services\TwoFactor;
 use Illuminate\Http\JsonResponse;
@@ -39,6 +41,49 @@ class MobileAuthController extends Controller
                 'two_factor_required' => true,
             ], 422);
         }
+
+        return response()->json([
+            'token' => $user->createToken($data['device_name'])->plainTextToken,
+            'user' => $this->userPayload($user),
+        ]);
+    }
+
+    /** Emails a sign in code. The answer is the same whether or not the address is known. */
+    public function sendCode(Request $request, LoginCodes $codes): Response
+    {
+        $data = $request->validate(['email' => ['required', 'string', 'email', 'max:255']]);
+
+        $codes->send(strtolower(trim($data['email'])));
+
+        return response()->noContent();
+    }
+
+    public function loginWithCode(Request $request, LoginCodes $codes, TwoFactor $twoFactor): JsonResponse
+    {
+        $data = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'code' => ['required', 'string', 'max:10'],
+            'device_name' => ['required', 'string', 'max:100'],
+            'two_factor_code' => ['nullable', 'string', 'max:20'],
+        ]);
+
+        $email = strtolower(trim($data['email']));
+        $code = preg_replace('/\s+/', '', $data['code']);
+        $user = $codes->check($email, $code) ? $codes->accountFor($email) : null;
+
+        if (! $user) {
+            throw ValidationException::withMessages(['code' => 'That code is not right, or it has expired.']);
+        }
+
+        // The emailed code stays usable here, so the person can retry a mistyped authenticator code.
+        if ($user->two_factor_enabled && ! (isset($data['two_factor_code']) && $twoFactor->passes($user, $data['two_factor_code']))) {
+            return response()->json([
+                'message' => isset($data['two_factor_code']) ? 'That code is not right.' : 'Enter the code from your authenticator app.',
+                'two_factor_required' => true,
+            ], 422);
+        }
+
+        $codes->forget($email);
 
         return response()->json([
             'token' => $user->createToken($data['device_name'])->plainTextToken,
@@ -123,8 +168,10 @@ class MobileAuthController extends Controller
         ]);
     }
 
-    public function workspaces(Request $request): JsonResponse
+    public function workspaces(Request $request, Invitations $invitations): JsonResponse
     {
+        $invitations->acceptFor($request->user());
+
         return response()->json(
             $request->user()->workspaces()->orderBy('name')->get(['workspaces.id', 'name', 'slug'])
                 ->map(fn ($workspace) => $workspace->only('id', 'name', 'slug')),

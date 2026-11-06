@@ -40,7 +40,7 @@ class BatchFourTest extends TestCase
 
         $this->actingAs($this->owner)->post('/workspaces', ['name' => 'Acme']);
         $this->workspace = Workspace::first();
-        $this->actingAs($this->member)->post('/workspaces/join', ['code' => $this->workspace->invite_code]);
+        app(\App\Services\Invitations::class)->admit($this->workspace, $this->member);
         $this->general = $this->workspace->channels()->first();
     }
 
@@ -256,7 +256,7 @@ class BatchFourTest extends TestCase
             ->assertJsonPath('sent', 2);
 
         Mail::assertSent(WorkspaceInvite::class, 2);
-        Mail::assertSent(WorkspaceInvite::class, fn ($mail) => str_contains($mail->render(), $this->workspace->invite_code));
+        Mail::assertSent(WorkspaceInvite::class, fn ($mail) => str_contains($mail->render(), route('dashboard')));
     }
 
     public function test_daily_workflow_runs_once_a_day_at_its_time(): void
@@ -308,8 +308,8 @@ class BatchFourTest extends TestCase
         ]);
 
         $person = User::factory()->create(['name' => 'New Person']);
-        $this->actingAs($person)->post('/workspaces/join', ['code' => $this->workspace->invite_code]);
-        $this->actingAs($person)->post('/workspaces/join', ['code' => $this->workspace->invite_code]);
+        app(\App\Services\Invitations::class)->admit($this->workspace, $person);
+        app(\App\Services\Invitations::class)->admit($this->workspace, $person);
 
         $this->assertSame(['Welcome New Person!'], $this->general->messages()->pluck('body')->all());
     }

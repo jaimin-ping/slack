@@ -42,7 +42,7 @@ class ChannelController extends Controller
 
         return Inertia::render('Workspace/Show', [
             'workspace' => fn () => [
-                ...$workspace->only('id', 'name', 'slug', 'invite_code'),
+                ...$workspace->only('id', 'name', 'slug'),
                 'is_owner' => $workspace->owner_id === $user->id,
                 'is_admin' => $workspace->isAdmin($user),
             ],
