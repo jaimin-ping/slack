@@ -44,8 +44,25 @@ class Invitations
 
         DB::transaction(function () use ($workspace, $user) {
             $workspace->members()->syncWithoutDetaching([$user->id]);
-            $workspace->channels()->where('type', Channel::PUBLIC)->get()
-                ->each(fn (Channel $channel) => $channel->members()->syncWithoutDetaching([$user->id]));
+            // Only add user to #general channel (default channel), not all public channels
+            // Users can browse and join other public channels manually
+            $generalChannel = $workspace->channels()
+                ->where('type', Channel::PUBLIC)
+                ->where('name', 'general')
+                ->first();
+
+            if ($generalChannel) {
+                $generalChannel->members()->syncWithoutDetaching([$user->id]);
+            } else {
+                // Fallback: if no #general channel exists, add to the oldest public channel
+                $defaultChannel = $workspace->channels()
+                    ->where('type', Channel::PUBLIC)
+                    ->oldest('id')
+                    ->first();
+                if ($defaultChannel) {
+                    $defaultChannel->members()->syncWithoutDetaching([$user->id]);
+                }
+            }
         });
 
         if ($isNew) {

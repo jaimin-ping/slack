@@ -49,3 +49,13 @@ export const PinIcon = (p: P) => <Icon {...p}><path d="m14 4 6 6-3 1-4 4 1 4-2 1
 export const BookmarkIcon = ({ filled, ...p }: P & { filled?: boolean }) => <Icon {...p} fill={filled ? 'currentColor' : 'none'}><path d="M7 4h10v16l-5-3.5L7 20V4Z" /></Icon>;
 export const ShareIcon = (p: P) => <Icon {...p}><path d="M14 6l6 6-6 6M20 12H9a5 5 0 0 0-5 5v1" /></Icon>;
 export const SmileIcon = (p: P) => <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="M8.5 14a4 4 0 0 0 7 0M9 10h.01M15 10h.01" /></Icon>;
+export const DownloadIcon = (p: P) => <Icon {...p}><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2" /></Icon>;
+export const LinkIcon = (p: P) => <Icon {...p}><path d="M10 14a3.5 3.5 0 005 0l4-4a3.5 3.5 0 00-5-5l-.5.5M14 10a3.5 3.5 0 00-5 0l-4 4a3.5 3.5 0 005 5l.5-.5" /></Icon>;
+export const FolderIcon = (p: P) => <Icon {...p}><path d="M3 6a1 1 0 011-1h5l2 2h9a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V6z" /></Icon>;
+export const FolderPlusIcon = (p: P) => <Icon {...p}><path d="M3 6a1 1 0 011-1h5l2 2h9a1 1 0 011 1v10a1 1 0 01-1 1H4a1 1 0 01-1-1V6zM12 11v4M10 13h4" /></Icon>;
+export const ListIcon = (p: P) => <Icon {...p}><path d="M9 6h11M9 12h11M9 18h11M5 6h.01M5 12h.01M5 18h.01" /></Icon>;
+export const CheckCircleIcon = (p: P) => <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="M8 12l2.5 2.5L16 9" /></Icon>;
+export const ExternalLinkIcon = (p: P) => <Icon {...p}><path d="M11 5H5v14h14v-6M14 5h5v5M20 4L10 14" /></Icon>;
+export const ImageIcon = (p: P) => <Icon {...p}><rect x="4" y="5" width="16" height="14" rx="1" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="M20 15l-4-4-7 7" /></Icon>;
+export const InfoIcon = (p: P) => <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 16v-4M12 8h.01" /></Icon>;
+export const MoreVerticalIcon = (p: P) => <Icon {...p}><circle cx="12" cy="6" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="18" r="1" /></Icon>;

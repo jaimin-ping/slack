@@ -6,6 +6,7 @@ use App\Http\Controllers\CanvasController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\FeedController;
+use App\Http\Controllers\FolderController;
 use App\Http\Controllers\InsightsController;
 use App\Http\Controllers\MemberController;
 use App\Http\Controllers\MessageController;
@@ -128,11 +129,21 @@ Route::middleware('auth')->group(function () {
             ->middleware('throttle:120,1')->name('messages.react');
         Route::post('/w/{workspace:slug}/c/{channel}/messages', [MessageController::class, 'store'])
             ->middleware('throttle:120,1')->name('messages.store');
+        Route::post('/w/{workspace:slug}/c/{channel}/share-file', [MessageController::class, 'shareFile'])
+            ->middleware('throttle:60,1')->name('messages.share-file');
     });
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // Folders (web routes for session auth)
+    Route::get('/folders', [FolderController::class, 'index'])->name('folders.index');
+    Route::post('/folders', [FolderController::class, 'store'])->name('folders.store');
+    Route::delete('/folders/{folder}', [FolderController::class, 'destroy'])->name('folders.destroy');
+    Route::get('/folders/{folder}/items', [FolderController::class, 'items'])->name('folders.items');
+    Route::post('/folders/{folder}/items', [FolderController::class, 'addItem'])->name('folders.addItem');
+    Route::delete('/folders/{folder}/items/{item}', [FolderController::class, 'removeItem'])->name('folders.removeItem');
 });
 
 require __DIR__.'/auth.php';

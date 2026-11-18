@@ -1,5 +1,5 @@
 import Avatar from '@/Components/Chat/Avatar';
-import { BookmarkIcon, CaretIcon, ComposeIcon, LockIcon, PencilIcon, PlusIcon, SearchIcon, ThreadIcon } from '@/Components/Chat/Icons';
+import { BookmarkIcon, CaretIcon, ComposeIcon, FolderIcon, LockIcon, PencilIcon, PlusIcon, SearchIcon, ThreadIcon } from '@/Components/Chat/Icons';
 import { WorkspaceMenu } from '@/Components/Chat/Menus';
 import {
     ActiveChannel,
@@ -35,6 +35,7 @@ interface Props {
     onRemoveSection: (id: number) => void;
     panel: InfoPanelName | null;
     onPanel: (panel: InfoPanelName) => void;
+    onDirectories: () => void;
 }
 
 const COLLAPSED_KEY = 'chat.sidebar.collapsed';
@@ -156,6 +157,7 @@ export default function Sidebar({
     onRemoveSection,
     panel,
     onPanel,
+    onDirectories,
 }: Props) {
     const [filter, setFilter] = useState('');
     const [menuOpen, setMenuOpen] = useState(false);
@@ -339,6 +341,11 @@ export default function Sidebar({
                             <button type="button" onClick={() => onPanel('saved')} className="block w-full">
                                 <Row active={panel === 'saved'} unread={0}>
                                     <BookmarkIcon className="h-4 w-4 shrink-0" /> Saved items
+                                </Row>
+                            </button>
+                            <button type="button" onClick={onDirectories} className="block w-full">
+                                <Row active={false} unread={0}>
+                                    <FolderIcon className="h-4 w-4 shrink-0" /> Directories
                                 </Row>
                             </button>
                         </div>

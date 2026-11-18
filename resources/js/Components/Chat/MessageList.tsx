@@ -1,3 +1,4 @@
+import AttachmentContextMenu from '@/Components/Chat/AttachmentContextMenu';
 import Avatar from '@/Components/Chat/Avatar';
 import EmojiDialog from '@/Components/Chat/EmojiDialog';
 import ImageViewer, { opensViewer } from '@/Components/Chat/ImageViewer';
@@ -5,6 +6,7 @@ import {
     BookmarkIcon,
     ChatIcon,
     FileIcon,
+    MoreVerticalIcon,
     PencilIcon,
     PinIcon,
     ShareIcon,
@@ -18,7 +20,7 @@ import {
     MessageAttachment,
     MessageCard,
 } from '@/types/chat';
-import { KeyboardEvent, useLayoutEffect, useRef, useState } from 'react';
+import { KeyboardEvent, MouseEvent as ReactMouseEvent, useLayoutEffect, useRef, useState } from 'react';
 
 interface Props {
     messages: ChatMessage[];
@@ -37,6 +39,11 @@ interface Props {
     onPin: (messageId: number) => void;
     onSave: (messageId: number) => void;
     onForward: (message: ChatMessage) => void;
+    onAttachmentSave?: (attachment: MessageAttachment) => void;
+    onAttachmentTodo?: (attachment: MessageAttachment) => void;
+    onAttachmentShare?: (attachment: MessageAttachment) => void;
+    onAttachmentDetails?: (attachment: MessageAttachment) => void;
+    onAttachmentDelete?: (attachment: MessageAttachment) => void;
 }
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
@@ -77,46 +84,99 @@ function Body({ text, members, meId }: { text: string; members: ChatUser[]; meId
 const fileSize = (bytes: number) =>
     bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
-function Attachments({ files }: { files: MessageAttachment[] }) {
+interface AttachmentsProps {
+    files: MessageAttachment[];
+    messageUserId: number;
+    meId: number;
+    canModerate: boolean;
+    onSave?: (attachment: MessageAttachment) => void;
+    onTodo?: (attachment: MessageAttachment) => void;
+    onShare?: (attachment: MessageAttachment) => void;
+    onDetails?: (attachment: MessageAttachment) => void;
+    onDelete?: (attachment: MessageAttachment) => void;
+}
+
+function Attachments({ files, messageUserId, meId, canModerate, onSave, onTodo, onShare, onDetails, onDelete }: AttachmentsProps) {
     const [viewing, setViewing] = useState<number | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ attachment: MessageAttachment; x: number; y: number } | null>(null);
     const images = files.filter((file) => file.is_image);
+
+    const handleContextMenu = (e: ReactMouseEvent, attachment: MessageAttachment) => {
+        e.preventDefault();
+        setContextMenu({ attachment, x: e.clientX, y: e.clientY });
+    };
+
+    const canDeleteFile = messageUserId === meId || canModerate;
 
     return (
         <div className="mt-1 flex flex-wrap gap-2">
             {viewing !== null && <ImageViewer images={images} start={viewing} onClose={() => setViewing(null)} />}
+            {contextMenu && (
+                <AttachmentContextMenu
+                    attachment={contextMenu.attachment}
+                    position={{ x: contextMenu.x, y: contextMenu.y }}
+                    onClose={() => setContextMenu(null)}
+                    onAddToSaved={onSave || (() => {})}
+                    onAddToTodo={onTodo || (() => {})}
+                    onShare={onShare || (() => {})}
+                    onViewDetails={onDetails || (() => {})}
+                    onDelete={onDelete || (() => {})}
+                    canDelete={canDeleteFile}
+                />
+            )}
             {files.map((file) =>
                 file.is_image ? (
-                    <a
-                        key={file.id}
-                        href={file.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={file.name}
-                        onClick={(e) => {
-                            if (!opensViewer(e)) return;
-                            e.preventDefault();
-                            setViewing(images.indexOf(file));
-                        }}
-                    >
-                        <img
-                            src={file.url}
-                            alt={file.name}
-                            loading="lazy"
-                            className="max-h-64 max-w-full rounded-lg border border-slate-200"
-                        />
-                    </a>
+                    <div key={file.id} className="group relative">
+                        <a
+                            href={file.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={file.name}
+                            onContextMenu={(e) => handleContextMenu(e, file)}
+                            onClick={(e) => {
+                                if (!opensViewer(e)) return;
+                                e.preventDefault();
+                                setViewing(images.indexOf(file));
+                            }}
+                        >
+                            <img
+                                src={file.url}
+                                alt={file.name}
+                                loading="lazy"
+                                className="max-h-64 max-w-full rounded-lg border border-slate-200"
+                            />
+                        </a>
+                        <button
+                            type="button"
+                            aria-label="More actions"
+                            onClick={(e) => handleContextMenu(e, file)}
+                            className="absolute right-2 top-2 hidden rounded bg-white/90 p-1 shadow-sm hover:bg-white group-hover:block"
+                        >
+                            <MoreVerticalIcon className="h-4 w-4 text-slate-600" />
+                        </button>
+                    </div>
                 ) : (
-                    <a
+                    <div
                         key={file.id}
-                        href={file.url}
-                        className="flex max-w-xs items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 hover:bg-slate-50"
+                        className="group relative flex max-w-xs items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 hover:bg-slate-50"
+                        onContextMenu={(e) => handleContextMenu(e, file)}
                     >
-                        <FileIcon className="h-6 w-6 shrink-0 text-sky-700" />
-                        <span className="min-w-0">
-                            <span className="block truncate text-sm font-semibold text-slate-800">{file.name}</span>
-                            <span className="block text-xs text-slate-500">{fileSize(file.size)}</span>
-                        </span>
-                    </a>
+                        <a href={file.url} className="flex items-center gap-2">
+                            <FileIcon className="h-6 w-6 shrink-0 text-sky-700" />
+                            <span className="min-w-0">
+                                <span className="block truncate text-sm font-semibold text-slate-800">{file.name}</span>
+                                <span className="block text-xs text-slate-500">{fileSize(file.size)}</span>
+                            </span>
+                        </a>
+                        <button
+                            type="button"
+                            aria-label="More actions"
+                            onClick={(e) => handleContextMenu(e, file)}
+                            className="ml-1 hidden rounded p-1 hover:bg-slate-200 group-hover:block"
+                        >
+                            <MoreVerticalIcon className="h-4 w-4 text-slate-600" />
+                        </button>
+                    </div>
                 ),
             )}
         </div>
@@ -229,6 +289,11 @@ export default function MessageList({
     onPin,
     onSave,
     onForward,
+    onAttachmentSave,
+    onAttachmentTodo,
+    onAttachmentShare,
+    onAttachmentDetails,
+    onAttachmentDelete,
 }: Props) {
     const scroller = useRef<HTMLDivElement>(null);
     const nearBottom = useRef(true);
@@ -402,7 +467,19 @@ export default function MessageList({
                                     </a>
                                 )}
 
-                                {message.attachments.length > 0 && <Attachments files={message.attachments} />}
+                                {message.attachments.length > 0 && (
+                                    <Attachments
+                                        files={message.attachments}
+                                        messageUserId={message.user.id}
+                                        meId={me.id}
+                                        canModerate={canModerate}
+                                        onSave={onAttachmentSave}
+                                        onTodo={onAttachmentTodo}
+                                        onShare={onAttachmentShare}
+                                        onDetails={onAttachmentDetails}
+                                        onDelete={onAttachmentDelete}
+                                    />
+                                )}
 
                                 {message.reactions.length > 0 && (
                                     <div className="mt-1 flex flex-wrap gap-1">

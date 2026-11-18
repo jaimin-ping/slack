@@ -264,4 +264,67 @@ class MessageController extends Controller
 
         return response()->json(['id' => $message->id, 'reactions' => $message->reactionSummary()]);
     }
+
+    public function shareFile(
+        Request $request,
+        Workspace $workspace,
+        Channel $channel,
+        ActivityRecorder $activity,
+    ): JsonResponse {
+        $user = $request->user();
+        abort_unless($channel->hasMember($user) && ! $channel->archived_at, 403);
+
+        $data = $request->validate([
+            'attachment_id' => ['required', 'integer', 'exists:attachments,id'],
+            'message' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $attachment = \App\Models\Attachment::findOrFail($data['attachment_id']);
+
+        // Verify the user has access to the original attachment's channel
+        $originalMessage = $attachment->message;
+        $originalChannel = $originalMessage?->channel;
+        abort_unless($originalChannel && $originalChannel->hasMember($user), 403);
+
+        // Get source info for the card
+        $sourceChannel = $originalChannel;
+        $source = $sourceChannel->type === Channel::DM ? 'a direct message' : '#'.$sourceChannel->name;
+
+        // Create the shared message
+        $sharedMessage = DB::transaction(function () use ($channel, $user, $data, $attachment, $source) {
+            $message = $channel->messages()->create([
+                'user_id' => $user->id,
+                'body' => trim($data['message'] ?? ''),
+                'cards' => [[
+                    'color' => '#0ea5e9',
+                    'title' => "{$user->name} shared from {$source}",
+                    'text' => '',
+                    'fields' => [],
+                ]],
+            ]);
+
+            // Copy the attachment to the new message (reference same file)
+            $message->attachments()->create([
+                'name' => $attachment->name,
+                'path' => $attachment->path,
+                'mime' => $attachment->mime,
+                'size' => $attachment->size,
+            ]);
+
+            return $message;
+        });
+
+        $sharedMessage->setRelation('user', $user);
+        $channel->members()->updateExistingPivot($user->id, ['last_read_message_id' => $sharedMessage->id]);
+
+        try {
+            event(new MessageSent($sharedMessage));
+        } catch (Throwable $e) {
+            report($e);
+        }
+
+        $activity->record($sharedMessage);
+
+        return response()->json($sharedMessage->toPayload(), 201);
+    }
 }

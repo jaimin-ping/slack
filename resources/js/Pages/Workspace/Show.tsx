@@ -3,6 +3,7 @@ import {
     ForwardModal,
     ManageAppsModal,
 } from '@/Components/Chat/Apps';
+import DirectoriesModal from '@/Components/Chat/DirectoriesModal';
 import CanvasPane from '@/Components/Chat/CanvasPane';
 import ChannelSettings from '@/Components/Chat/ChannelSettings';
 import Composer from '@/Components/Chat/Composer';
@@ -40,6 +41,7 @@ import {
     QuickSwitcher,
     ShortcutsModal,
 } from '@/Components/Chat/Settings';
+import ShareFileModal from '@/Components/Chat/ShareFileModal';
 import Sidebar from '@/Components/Chat/Sidebar';
 import ThreadPane from '@/Components/Chat/ThreadPane';
 import TopBar from '@/Components/Chat/TopBar';
@@ -51,6 +53,7 @@ import {
     ChatMessage,
     ChatUser,
     InfoPanelName,
+    MessageAttachment,
     MessageReaction,
     RailItem,
     RailView,
@@ -172,6 +175,7 @@ export default function Show({
         | 'two-factor'
         | 'analytics'
         | 'audit'
+        | 'directories'
         | null
     >(null);
     const [membersOpen, setMembersOpen] = useState(false);
@@ -183,6 +187,7 @@ export default function Show({
     const [panel, setPanel] = useState<InfoPanelName | null>(null);
     const [saved, setSaved] = useState(new Set(initialSavedIds));
     const [forwarding, setForwarding] = useState<ChatMessage | null>(null);
+    const [sharingAttachment, setSharingAttachment] = useState<MessageAttachment | null>(null);
     const [pins, setPins] = useState<ChatMessage[] | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
     const [tab, setTab] = useState<'messages' | 'canvas'>('messages');
@@ -788,6 +793,76 @@ export default function Show({
             .catch(() => {});
     };
 
+    // Attachment action handlers
+    const saveAttachment = (attachment: MessageAttachment) => {
+        axios.post('/api/v1/saved-items', {
+            saveable_type: 'attachment',
+            saveable_id: attachment.id,
+        }).then(() => {
+            setNotice(`"${attachment.name}" saved to your saved items.`);
+        }).catch(() => {});
+    };
+
+    const addAttachmentTodo = (attachment: MessageAttachment) => {
+        axios.post('/api/v1/todos', {
+            title: `Review: ${attachment.name}`,
+            linked_type: 'attachment',
+            linked_id: attachment.id,
+        }).then(() => {
+            setNotice(`To-do created for "${attachment.name}".`);
+        }).catch(() => {});
+    };
+
+    const shareAttachment = (attachment: MessageAttachment) => {
+        setSharingAttachment(attachment);
+    };
+
+    const handleShareFile = async (
+        attachment: MessageAttachment,
+        targetType: 'channel' | 'user',
+        targetId: number,
+        message: string
+    ) => {
+        try {
+            let channelId = targetId;
+
+            // For DM, we need to get or create the DM channel first
+            if (targetType === 'user') {
+                const { data: dmChannel } = await axios.post<{ id: number }>(
+                    route('channels.direct', [workspace.slug, targetId])
+                );
+                channelId = dmChannel.id;
+            }
+
+            // Use the share-file endpoint which copies the attachment
+            await axios.post(route('messages.share-file', [workspace.slug, channelId]), {
+                attachment_id: attachment.id,
+                message: message || null,
+            });
+
+            setNotice(`"${attachment.name}" shared successfully.`);
+        } catch (error) {
+            console.error('Share failed:', error);
+            setNotice('Failed to share file. Please try again.');
+        }
+    };
+
+    const viewAttachmentDetails = (attachment: MessageAttachment) => {
+        // For now, open attachment in new tab. Full details modal can be added later.
+        window.open(`/api/v1/attachments/${attachment.id}/details`, '_blank');
+    };
+
+    const deleteAttachment = (attachment: MessageAttachment) => {
+        if (confirm(`Are you sure you want to delete "${attachment.name}"?`)) {
+            axios.delete(`/api/v1/attachments/${attachment.id}`).then(() => {
+                setNotice(`"${attachment.name}" deleted.`);
+                router.reload({ only: ['messages'] });
+            }).catch(() => {
+                setNotice('Failed to delete file. You may not have permission.');
+            });
+        }
+    };
+
     const togglePins = async () => {
         if (pins) {
             setPins(null);
@@ -861,6 +936,7 @@ export default function Show({
                         onRemoveSection={removeSection}
                         panel={panel}
                         onPanel={setPanel}
+                        onDirectories={() => setModal('directories')}
                     />
 
                     {panel && (
@@ -1112,6 +1188,11 @@ export default function Show({
                                 onPin={pinMessage}
                                 onSave={saveMessage}
                                 onForward={setForwarding}
+                                onAttachmentSave={saveAttachment}
+                                onAttachmentTodo={addAttachmentTodo}
+                                onAttachmentShare={shareAttachment}
+                                onAttachmentDetails={viewAttachmentDetails}
+                                onAttachmentDelete={deleteAttachment}
                             />
 
                             {notice && (
@@ -1193,6 +1274,11 @@ export default function Show({
                             onPin={pinMessage}
                             onSave={saveMessage}
                             onForward={setForwarding}
+                            onAttachmentSave={saveAttachment}
+                            onAttachmentTodo={addAttachmentTodo}
+                            onAttachmentShare={shareAttachment}
+                            onAttachmentDetails={viewAttachmentDetails}
+                            onAttachmentDelete={deleteAttachment}
                         />
                     )}
                 </div>
@@ -1267,6 +1353,22 @@ export default function Show({
                 members={members}
                 onClose={() => setForwarding(null)}
             />
+            {sharingAttachment && (
+                <ShareFileModal
+                    attachment={sharingAttachment}
+                    channels={sidebar
+                        .filter(c => c.type !== 'dm' && c.name !== null)
+                        .map(c => ({
+                            id: c.id,
+                            name: c.name as string,
+                            is_private: c.type === 'private',
+                        }))}
+                    people={people}
+                    me={me}
+                    onClose={() => setSharingAttachment(null)}
+                    onShare={handleShareFile}
+                />
+            )}
             <MembersModal
                 show={modal === 'members'}
                 workspace={workspace}
@@ -1345,6 +1447,11 @@ export default function Show({
                 show={modal === 'apps'}
                 workspace={workspace}
                 channels={sidebar}
+                onClose={() => setModal(null)}
+            />
+            <DirectoriesModal
+                show={modal === 'directories'}
+                workspace={workspace}
                 onClose={() => setModal(null)}
             />
             <DeleteMessageModal

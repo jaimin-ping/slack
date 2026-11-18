@@ -1,6 +1,6 @@
 import Composer from '@/Components/Chat/Composer';
 import MessageList from '@/Components/Chat/MessageList';
-import { ChatMessage, ChatUser } from '@/types/chat';
+import { ChatMessage, ChatUser, MessageAttachment } from '@/types/chat';
 import { useEffect } from 'react';
 
 interface Props {
@@ -20,6 +20,11 @@ interface Props {
     onPin: (messageId: number) => void;
     onSave: (messageId: number) => void;
     onForward: (message: ChatMessage) => void;
+    onAttachmentSave?: (attachment: MessageAttachment) => void;
+    onAttachmentTodo?: (attachment: MessageAttachment) => void;
+    onAttachmentShare?: (attachment: MessageAttachment) => void;
+    onAttachmentDetails?: (attachment: MessageAttachment) => void;
+    onAttachmentDelete?: (attachment: MessageAttachment) => void;
 }
 
 export default function ThreadPane({
@@ -39,6 +44,11 @@ export default function ThreadPane({
     onPin,
     onSave,
     onForward,
+    onAttachmentSave,
+    onAttachmentTodo,
+    onAttachmentShare,
+    onAttachmentDetails,
+    onAttachmentDelete,
 }: Props) {
     useEffect(() => {
         const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -80,6 +90,11 @@ export default function ThreadPane({
                 onPin={onPin}
                 onSave={onSave}
                 onForward={onForward}
+                onAttachmentSave={onAttachmentSave}
+                onAttachmentTodo={onAttachmentTodo}
+                onAttachmentShare={onAttachmentShare}
+                onAttachmentDetails={onAttachmentDetails}
+                onAttachmentDelete={onAttachmentDelete}
             />
 
             <div className="pb-3">

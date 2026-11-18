@@ -340,9 +340,11 @@ class ChannelController extends Controller
         }
 
         $isPrivate = $data['is_private'] ?? false;
+        // Private channels: only invited members
+        // Public channels: only the creator initially, others can browse and join
         $memberIds = $isPrivate
             ? $workspace->members()->whereIn('users.id', [...($data['member_ids'] ?? []), $user->id])->pluck('users.id')
-            : $workspace->members()->pluck('users.id');
+            : collect([$user->id]);
 
         $channel = DB::transaction(function () use ($workspace, $name, $isPrivate, $user, $memberIds) {
             $channel = $workspace->channels()->create([
@@ -378,8 +380,9 @@ class ChannelController extends Controller
             ['type' => Channel::DM, 'created_by' => $me->id],
         );
 
+        $channel->members()->syncWithoutDetaching([$me->id, $user->id]);
+
         if ($channel->wasRecentlyCreated) {
-            $channel->members()->attach([$me->id, $user->id]);
             $this->notifySidebar($workspace, [$user->id]);
         }
 

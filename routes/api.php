@@ -5,12 +5,16 @@ use App\Http\Controllers\AvatarController;
 use App\Http\Controllers\CanvasController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\FeedController;
+use App\Http\Controllers\FolderController;
 use App\Http\Controllers\IncomingWebhookController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\MobileAuthController;
 use App\Http\Controllers\PreferencesController;
+use App\Http\Controllers\SavedItemController;
+use App\Http\Controllers\SectionController;
 use App\Http\Controllers\SlashCommandController;
 use App\Http\Controllers\StatusController;
+use App\Http\Controllers\TodoController;
 use App\Http\Controllers\WorkspaceToolsController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
@@ -42,8 +46,45 @@ Route::prefix('api/v1')->name('api.')->group(function () {
         Route::delete('/me/avatar', [AvatarController::class, 'destroy'])->name('avatar.destroy');
 
         Route::get('/attachments/{attachment}', [AttachmentController::class, 'show'])->name('attachments.show');
+        Route::get('/attachments/{attachment}/details', [AttachmentController::class, 'details'])->name('attachments.details');
+        Route::patch('/attachments/{attachment}', [AttachmentController::class, 'update'])->name('attachments.update');
+        Route::delete('/attachments/{attachment}', [AttachmentController::class, 'destroy'])->name('attachments.destroy');
+        Route::get('/attachments/{attachment}/download', [AttachmentController::class, 'download'])->name('attachments.download');
+        Route::post('/attachments/{attachment}/share', [AttachmentController::class, 'share'])->name('attachments.share');
+        Route::get('/attachments/{attachment}/shares', [AttachmentController::class, 'shares'])->name('attachments.shares');
+
         Route::get('/avatars/{user}', [AvatarController::class, 'show'])->name('avatars.show');
         Route::get('/emoji/{emoji}', [WorkspaceToolsController::class, 'showEmoji'])->name('emoji.show');
+
+        // Saved Items (Bookmarks)
+        Route::get('/saved-items', [SavedItemController::class, 'index'])->name('saved-items.index');
+        Route::post('/saved-items', [SavedItemController::class, 'store'])->name('saved-items.store');
+        Route::delete('/saved-items/{savedItem}', [SavedItemController::class, 'destroy'])->name('saved-items.destroy');
+        Route::delete('/saved-items/by-item', [SavedItemController::class, 'destroyByItem'])->name('saved-items.destroy-by-item');
+
+        // Todos
+        Route::get('/todos', [TodoController::class, 'index'])->name('todos.index');
+        Route::post('/todos', [TodoController::class, 'store'])->name('todos.store');
+        Route::patch('/todos/{todo}', [TodoController::class, 'update'])->name('todos.update');
+        Route::delete('/todos/{todo}', [TodoController::class, 'destroy'])->name('todos.destroy');
+
+        // Folders
+        Route::get('/folders', [FolderController::class, 'index'])->name('folders.index');
+        Route::post('/folders', [FolderController::class, 'store'])->name('folders.store');
+        Route::patch('/folders/{folder}', [FolderController::class, 'update'])->name('folders.update');
+        Route::delete('/folders/{folder}', [FolderController::class, 'destroy'])->name('folders.destroy');
+        Route::get('/folders/{folder}/items', [FolderController::class, 'items'])->name('folders.items');
+        Route::post('/folders/{folder}/items', [FolderController::class, 'addItem'])->name('folders.items.store');
+        Route::delete('/folders/{folder}/items/{item}', [FolderController::class, 'removeItem'])->name('folders.items.destroy');
+
+        // Sections
+        Route::get('/sections', [SectionController::class, 'index'])->name('sections.index');
+        Route::post('/sections', [SectionController::class, 'store'])->name('sections.store');
+        Route::patch('/sections/{section}', [SectionController::class, 'update'])->name('sections.update');
+        Route::delete('/sections/{section}', [SectionController::class, 'destroy'])->name('sections.destroy');
+        Route::get('/sections/{section}/items', [SectionController::class, 'items'])->name('sections.items');
+        Route::post('/sections/{section}/items', [SectionController::class, 'addItem'])->name('sections.items.store');
+        Route::delete('/sections/{section}/items/{item}', [SectionController::class, 'removeItem'])->name('sections.items.destroy');
 
         Route::get('/w/{workspace:slug}', [ChannelController::class, 'bootstrap'])->name('workspace');
         Route::get('/w/{workspace:slug}/search', [ChannelController::class, 'search'])->name('search');
