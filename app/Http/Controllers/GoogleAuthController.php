@@ -38,7 +38,7 @@ class GoogleAuthController extends Controller
     }
 
     /** The mobile/desktop app opens this in its system browser. */
-    public function mobile(Request $request): Response
+    public function mobile(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'challenge' => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{43}$/'],
@@ -49,84 +49,53 @@ class GoogleAuthController extends Controller
             abort(422, 'Invalid redirect URI');
         }
 
-        // Store the mobile context in session and save immediately
+        // Store the mobile context in session
         $request->session()->put('google_mobile', $data);
-        $request->session()->save();
 
-        // Get the Google OAuth URL
-        $googleUrl = Socialite::driver('google')->redirect()->getTargetUrl();
-
-        // Return HTML page with JavaScript redirect (more reliable across browsers)
-        $html = <<<HTML
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Redirecting to Google...</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0;
-            color: white;
-        }
-        .container {
-            text-align: center;
-            padding: 2rem;
-        }
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(255,255,255,0.3);
-            border-top-color: white;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 1rem;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        a {
-            color: white;
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="spinner"></div>
-        <p>Redirecting to Google...</p>
-        <p><small>If not redirected, <a href="{$googleUrl}">click here</a></small></p>
-    </div>
-    <script>
-        window.location.replace("{$googleUrl}");
-    </script>
-</body>
-</html>
-HTML;
-
-        return response($html)->header('Content-Type', 'text/html');
+        // Use Socialite's redirect directly (preserves state)
+        return Socialite::driver('google')->redirect();
     }
 
     public function callback(Request $request): RedirectResponse|InertiaResponse
     {
         $mobile = $request->session()->pull('google_mobile');
 
+        // Log for debugging
+        \Log::info('Google callback', [
+            'has_mobile' => !empty($mobile),
+            'mobile_data' => $mobile,
+            'has_code' => $request->has('code'),
+            'has_error' => $request->has('error'),
+            'error' => $request->get('error'),
+        ]);
+
+        // Check if Google returned an error
+        if ($request->has('error')) {
+            $errorMsg = $request->get('error') . ': ' . $request->get('error_description', 'Unknown error');
+            \Log::error('Google returned error', ['error' => $errorMsg, 'mobile' => $mobile]);
+
+            if ($mobile) {
+                return $this->toApp($mobile['redirect_uri'], ['error' => $errorMsg]);
+            }
+            return $this->backToLogin($errorMsg);
+        }
+
         try {
             $googleUser = Socialite::driver('google')->user();
         } catch (Throwable $e) {
+            $errorMsg = 'OAuth Error: ' . $e->getMessage();
+            \Log::error('Google OAuth error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'mobile' => $mobile,
+            ]);
             report($e);
 
             if ($mobile) {
-                return $this->toApp($mobile['redirect_uri'], ['error' => self::FAILED]);
+                return $this->toApp($mobile['redirect_uri'], ['error' => $errorMsg]);
             }
 
-            return $this->backToLogin(self::FAILED);
+            return $this->backToLogin($errorMsg);
         }
 
         $email = strtolower($googleUser->getEmail());
