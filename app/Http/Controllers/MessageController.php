@@ -12,6 +12,7 @@ use App\Models\Channel;
 use App\Models\Draft;
 use App\Models\Message;
 use App\Models\Reaction;
+use App\Models\Reminder;
 use App\Models\SavedMessage;
 use App\Models\Workspace;
 use App\Services\ActivityRecorder;
@@ -119,6 +120,33 @@ class MessageController extends Controller
         $existing ? $existing->delete() : SavedMessage::create($key);
 
         return response()->json(['saved' => ! $existing]);
+    }
+
+    /** Creates a reminder for a message */
+    public function remind(Request $request, Workspace $workspace, Channel $channel, Message $message): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($channel->hasMember($user), 403);
+        abort_if($message->removed_at !== null, 404);
+
+        $data = $request->validate([
+            'remind_at' => ['required', 'date', 'after:now'],
+        ]);
+
+        // Create a reminder with the message body as text
+        $text = $message->body ?: 'Message reminder';
+        if (mb_strlen($text) > 200) {
+            $text = mb_substr($text, 0, 197) . '...';
+        }
+
+        $reminder = Reminder::create([
+            'user_id' => $user->id,
+            'workspace_id' => $workspace->id,
+            'text' => $text,
+            'remind_at' => $data['remind_at'],
+        ]);
+
+        return response()->json(['id' => $reminder->id, 'remind_at' => $reminder->remind_at]);
     }
 
     public function forward(

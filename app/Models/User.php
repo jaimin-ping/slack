@@ -82,6 +82,7 @@ class User extends Authenticatable
         'dnd_from',
         'dnd_to',
         'status_expires_at',
+        'google_id',
     ];
 
     /**
@@ -98,6 +99,7 @@ class User extends Authenticatable
         'two_factor_last_step',
         'sso_issuer',
         'sso_subject',
+        'google_id',
     ];
 
     /** @var list<string> */

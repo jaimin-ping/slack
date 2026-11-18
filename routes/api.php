@@ -30,6 +30,8 @@ Route::prefix('api/v1')->name('api.')->group(function () {
     Route::post('/login/code', [MobileAuthController::class, 'loginWithCode'])->middleware('throttle:10,1')->name('login.code');
     Route::get('/sso', [MobileAuthController::class, 'sso'])->name('sso');
     Route::post('/sso/exchange', [MobileAuthController::class, 'ssoExchange'])->middleware('throttle:5,1')->name('sso.exchange');
+    Route::get('/google/enabled', [MobileAuthController::class, 'googleEnabled'])->name('google.enabled');
+    Route::post('/google/exchange', [MobileAuthController::class, 'googleExchange'])->middleware('throttle:5,1')->name('google.exchange');
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [MobileAuthController::class, 'logout'])->name('logout');
@@ -105,6 +107,7 @@ Route::prefix('api/v1')->name('api.')->group(function () {
 
         Route::scopeBindings()->prefix('/w/{workspace:slug}/c/{channel}')->group(function () {
             Route::post('/read', [ChannelController::class, 'read'])->name('read');
+            Route::post('/unread', [ChannelController::class, 'unread'])->name('unread');
             Route::post('/huddle', [ChannelController::class, 'huddle'])->middleware('throttle:20,1')->name('huddle');
             Route::post('/join', [ChannelController::class, 'join'])->name('join');
             Route::post('/leave', [ChannelController::class, 'leave'])->name('leave');
@@ -124,6 +127,7 @@ Route::prefix('api/v1')->name('api.')->group(function () {
             Route::post('/messages/{message}/reactions', [MessageController::class, 'react'])->middleware('throttle:120,1')->name('messages.react');
             Route::post('/messages/{message}/pin', [MessageController::class, 'pin'])->name('messages.pin');
             Route::post('/messages/{message}/save', [MessageController::class, 'save'])->name('messages.save');
+            Route::post('/messages/{message}/remind', [MessageController::class, 'remind'])->name('messages.remind');
             Route::post('/messages/{message}/forward', [MessageController::class, 'forward'])->middleware('throttle:120,1')->name('messages.forward');
         });
     });

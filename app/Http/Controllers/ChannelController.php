@@ -441,6 +441,32 @@ class ChannelController extends Controller
         return response()->noContent();
     }
 
+    /** Marks the channel as unread from a specific message */
+    public function unread(Request $request, Workspace $workspace, Channel $channel): HttpResponse
+    {
+        abort_unless($channel->hasMember($request->user()), 403);
+
+        $data = $request->validate([
+            'message_id' => ['required', 'integer'],
+        ]);
+
+        // Set the last_read_message_id to one less than the specified message
+        // This makes all messages from message_id onwards appear as unread
+        $messageId = (int) $data['message_id'];
+
+        // Get the previous message ID (if any)
+        $previousMessageId = $channel->messages()
+            ->whereNull('parent_id')
+            ->where('id', '<', $messageId)
+            ->max('id');
+
+        $channel->members()->updateExistingPivot($request->user()->id, [
+            'last_read_message_id' => $previousMessageId ?? 0,
+        ]);
+
+        return response()->noContent();
+    }
+
     /** Rings the other people in the conversation. */
     public function huddle(Request $request, Workspace $workspace, Channel $channel): HttpResponse
     {
