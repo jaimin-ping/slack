@@ -395,9 +395,25 @@ class ChannelController extends Controller
 
     public function messages(Request $request, Workspace $workspace, Channel $channel): JsonResponse
     {
-        abort_unless($channel->hasMember($request->user()), 403);
+        $user = $request->user();
+        abort_unless($channel->hasMember($user), 403);
 
-        return response()->json($this->page($channel, $request->integer('before') ?: null));
+        $page = $this->page($channel, $request->integer('before') ?: null);
+
+        // Get first unread message ID (only on initial load, not when paginating)
+        if (!$request->has('before')) {
+            $lastReadId = $channel->members()->whereKey($user->id)->first()->pivot->last_read_message_id ?? 0;
+
+            $firstUnreadId = $channel->messages()
+                ->whereNull('parent_id')
+                ->where('id', '>', $lastReadId)
+                ->where(fn ($q) => $q->whereNull('user_id')->orWhere('user_id', '!=', $user->id))
+                ->min('id');
+
+            $page['first_unread_id'] = $firstUnreadId;
+        }
+
+        return response()->json($page);
     }
 
     public function thread(Request $request, Workspace $workspace, Channel $channel, Message $message): JsonResponse

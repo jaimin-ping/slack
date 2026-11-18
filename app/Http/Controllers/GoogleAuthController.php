@@ -38,7 +38,7 @@ class GoogleAuthController extends Controller
     }
 
     /** The mobile/desktop app opens this in its system browser. */
-    public function mobile(Request $request): RedirectResponse
+    public function mobile(Request $request): Response
     {
         $data = $request->validate([
             'challenge' => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{43}$/'],
@@ -49,16 +49,50 @@ class GoogleAuthController extends Controller
             abort(422, 'Invalid redirect URI');
         }
 
-        // Store the mobile context in session
-        $request->session()->put('google_mobile', $data);
+        // Generate a unique state for this mobile OAuth request
+        $state = Str::random(40);
 
-        // Use Socialite's redirect directly (preserves state)
-        return Socialite::driver('google')->redirect();
+        // Store mobile context in cache (more reliable than session for OAuth redirects)
+        Cache::put('google.mobile.state.' . $state, $data, 600); // 10 minutes
+
+        // Get Google OAuth URL with our custom state
+        $googleUrl = Socialite::driver('google')
+            ->stateless()
+            ->with(['state' => $state])
+            ->redirect()
+            ->getTargetUrl();
+
+        $escapedUrl = htmlspecialchars($googleUrl, ENT_QUOTES, 'UTF-8');
+
+        // Return HTML with immediate JavaScript redirect
+        $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="refresh" content="0;url={$escapedUrl}">
+<script>window.location.href="{$googleUrl}";</script>
+</head>
+<body></body>
+</html>
+HTML;
+
+        return response($html, 200, [
+            'Content-Type' => 'text/html; charset=UTF-8',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+        ]);
     }
 
-    public function callback(Request $request): RedirectResponse|InertiaResponse
+    public function callback(Request $request): RedirectResponse|InertiaResponse|Response
     {
-        $mobile = $request->session()->pull('google_mobile');
+        // Check for mobile context in cache (using state parameter)
+        $state = $request->get('state');
+        $mobile = $state ? Cache::pull('google.mobile.state.' . $state) : null;
+
+        // Fallback to session for web flow
+        if (!$mobile) {
+            $mobile = $request->session()->pull('google_mobile');
+        }
 
         // Log for debugging
         \Log::info('Google callback', [
@@ -67,6 +101,7 @@ class GoogleAuthController extends Controller
             'has_code' => $request->has('code'),
             'has_error' => $request->has('error'),
             'error' => $request->get('error'),
+            'state' => $state,
         ]);
 
         // Check if Google returned an error
@@ -81,7 +116,10 @@ class GoogleAuthController extends Controller
         }
 
         try {
-            $googleUser = Socialite::driver('google')->user();
+            // Use stateless for mobile flow (no session needed)
+            $googleUser = $mobile
+                ? Socialite::driver('google')->stateless()->user()
+                : Socialite::driver('google')->user();
         } catch (Throwable $e) {
             $errorMsg = 'OAuth Error: ' . $e->getMessage();
             \Log::error('Google OAuth error', [
@@ -186,7 +224,7 @@ class GoogleAuthController extends Controller
     }
 
     /** Hands the app a short-lived code that only the holder of the matching verifier can use. */
-    private function finishMobile(array $mobile, User $user): RedirectResponse
+    private function finishMobile(array $mobile, User $user): Response|RedirectResponse
     {
         $code = Str::random(64);
 
@@ -195,11 +233,12 @@ class GoogleAuthController extends Controller
             'challenge' => $mobile['challenge'],
         ], self::MOBILE_CODE_SECONDS);
 
-        // For deep links (pingchat://), always redirect directly
         $uri = $mobile['redirect_uri'];
         $query = http_build_query(['code' => $code]);
+        $deepLink = "{$uri}?{$query}";
 
-        return redirect()->away("{$uri}?{$query}");
+        // Redirect to deep link
+        return redirect()->away($deepLink);
     }
 
     private function signIn(Request $request, User $user): RedirectResponse
@@ -236,11 +275,97 @@ class GoogleAuthController extends Controller
         return false;
     }
 
-    private function toApp(string $uri, array $query): RedirectResponse|InertiaResponse
+    private function toApp(string $uri, array $query): RedirectResponse|InertiaResponse|Response
     {
-        // For deep links, redirect
+        // For deep links, show page that redirects and displays message
         if (str_starts_with($uri, 'pingchat://') || str_starts_with($uri, 'exp://')) {
-            return redirect()->away($uri.'?'.http_build_query($query));
+            $deepLink = $uri.'?'.http_build_query($query);
+            $isError = isset($query['error']);
+            $message = $isError ? htmlspecialchars($query['error']) : 'Opening Ping Chat...';
+            $title = $isError ? 'Sign in failed' : 'Redirecting...';
+            $iconColor = $isError ? '#ef4444' : '#22c55e';
+            $iconPath = $isError
+                ? 'M6 18L18 6M6 6l12 12'
+                : 'M5 13l4 4L19 7';
+
+            $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>{$title}</title>
+<style>
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+}
+.container {
+    background: white;
+    border-radius: 16px;
+    padding: 48px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    max-width: 400px;
+}
+.icon {
+    width: 64px;
+    height: 64px;
+    background: {$iconColor};
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 24px;
+}
+.icon svg {
+    width: 32px;
+    height: 32px;
+    stroke: white;
+}
+h1 {
+    color: #1f2937;
+    font-size: 24px;
+    margin: 0 0 12px;
+}
+p {
+    color: #6b7280;
+    margin: 0;
+    line-height: 1.5;
+}
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="icon">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="{$iconPath}"/>
+        </svg>
+    </div>
+    <h1>{$title}</h1>
+    <p>{$message}<br>You can close this tab.</p>
+</div>
+<script>
+// Redirect to app via deep link
+window.location.href = "{$deepLink}";
+
+// Try to close the tab after a short delay
+setTimeout(function() {
+    window.close();
+}, 1000);
+</script>
+</body>
+</html>
+HTML;
+
+            return response($html, 200, [
+                'Content-Type' => 'text/html; charset=UTF-8',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            ]);
         }
 
         // For web/localhost, show code page
