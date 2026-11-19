@@ -52,6 +52,8 @@ export interface ChatMessage {
     pinned: boolean;
     link_preview: { url: string; title: string; description: string; site: string } | null;
     is_bot: boolean;
+    /** Set when a personal AI agent wrote the message (it is then also a bot message). */
+    agent?: MessageAgent | null;
     user: ChatUser;
     cards: MessageCard[];
     reactions: MessageReaction[];
@@ -59,6 +61,15 @@ export interface ChatMessage {
     reply_count: number;
     last_reply_at: string | null;
     parent_reply_count: number | null;
+}
+
+export interface MessageAgent {
+    id: number;
+    name: string;
+    owner_id: number;
+    owner_name: string | null;
+    avatar_url: string | null;
+    avatar_preset: string | null;
 }
 
 export interface SearchResult extends ChatMessage {
@@ -120,7 +131,7 @@ export type WorkspaceTool = 'groups' | 'emoji' | 'workflows' | 'export' | 'analy
 
 export type RailView = 'home' | 'dms';
 export type InfoPanelName = 'activity' | 'threads' | 'drafts' | 'files' | 'channels' | 'saved' | 'scheduled';
-export type RailItem = RailView | 'activity' | 'files';
+export type RailItem = RailView | 'activity' | 'files' | 'tasks' | 'agents';
 
 const AVATAR_COLORS = ['bg-teal-600', 'bg-amber-600', 'bg-sky-600', 'bg-rose-600', 'bg-violet-600', 'bg-lime-700'];
 

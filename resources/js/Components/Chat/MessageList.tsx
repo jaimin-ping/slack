@@ -1,3 +1,4 @@
+import AgentAvatar from '@/Components/AI/AgentAvatar';
 import AttachmentContextMenu from '@/Components/Chat/AttachmentContextMenu';
 import Avatar from '@/Components/Chat/Avatar';
 import EmojiDialog from '@/Components/Chat/EmojiDialog';
@@ -5,6 +6,7 @@ import ImageViewer, { opensViewer } from '@/Components/Chat/ImageViewer';
 import {
     BookmarkIcon,
     ChatIcon,
+    CheckCircleIcon,
     FileIcon,
     MoreVerticalIcon,
     PencilIcon,
@@ -44,6 +46,8 @@ interface Props {
     onAttachmentShare?: (attachment: MessageAttachment) => void;
     onAttachmentDetails?: (attachment: MessageAttachment) => void;
     onAttachmentDelete?: (attachment: MessageAttachment) => void;
+    /** Opens the task panel with a new task linked to this message. */
+    onCreateTask?: (message: ChatMessage) => void;
 }
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
@@ -294,6 +298,7 @@ export default function MessageList({
     onAttachmentShare,
     onAttachmentDetails,
     onAttachmentDelete,
+    onCreateTask,
 }: Props) {
     const scroller = useRef<HTMLDivElement>(null);
     const nearBottom = useRef(true);
@@ -366,6 +371,7 @@ export default function MessageList({
                 const newDay = !previous || day(previous.created_at) !== day(message.created_at);
                 const isNewLine = message.id === newLineId;
                 const canEdit = !message.is_bot && message.user.id === me.id;
+                const ownsAgent = message.agent?.owner_id === me.id;
                 const grouped =
                     !newDay &&
                     !isNewLine &&
@@ -404,20 +410,37 @@ export default function MessageList({
                                     {time(message.created_at).replace(/\s?[AP]M/i, '')}
                                 </time>
                             ) : (
-                                <Avatar
-                                    user={members.find((m) => m.id === message.user.id) ?? message.user}
-                                    className="h-9 w-9 rounded-lg"
-                                />
+                                message.agent ? (
+                                    <AgentAvatar agent={message.agent} className="h-9 w-9 rounded-lg" />
+                                ) : (
+                                    <Avatar
+                                        user={members.find((m) => m.id === message.user.id) ?? message.user}
+                                        className="h-9 w-9 rounded-lg"
+                                    />
+                                )
                             )}
 
                             <div className="min-w-0 flex-1">
                                 {!grouped && (
                                     <div className="flex items-baseline gap-2">
                                         <span className="text-[15px] font-bold text-slate-900">{message.user.name}</span>
-                                        {message.is_bot && (
-                                            <span className="rounded bg-slate-200 px-1 text-[10px] font-semibold text-slate-600">
-                                                APP
+                                        {message.agent ? (
+                                            <span
+                                                className="rounded bg-violet-100 px-1 text-[10px] font-semibold text-violet-700"
+                                                title={
+                                                    message.agent.owner_name
+                                                        ? `AI assistant acting for ${message.agent.owner_name}`
+                                                        : 'AI assistant'
+                                                }
+                                            >
+                                                AI{message.agent.owner_name ? ` · for ${message.agent.owner_name}` : ''}
                                             </span>
+                                        ) : (
+                                            message.is_bot && (
+                                                <span className="rounded bg-slate-200 px-1 text-[10px] font-semibold text-slate-600">
+                                                    APP
+                                                </span>
+                                            )
                                         )}
                                         <time dateTime={message.created_at} className="text-xs text-slate-500">
                                             {time(message.created_at)}
@@ -580,6 +603,17 @@ export default function MessageList({
                                 >
                                     <BookmarkIcon filled={savedIds.has(message.id)} className="h-4 w-4" />
                                 </button>
+                                {onCreateTask && !message.removed && (
+                                    <button
+                                        type="button"
+                                        aria-label="Create task from message"
+                                        title="Create task from message"
+                                        onClick={() => onCreateTask(message)}
+                                        className="rounded p-1 text-slate-600 hover:bg-slate-100"
+                                    >
+                                        <CheckCircleIcon className="h-4 w-4" />
+                                    </button>
+                                )}
                                 <button
                                     type="button"
                                     aria-label="Forward message"
@@ -600,7 +634,7 @@ export default function MessageList({
                                         <PencilIcon className="h-4 w-4" />
                                     </button>
                                 )}
-                                {(canEdit || canModerate) && (
+                                {(canEdit || ownsAgent || canModerate) && (
                                     <button
                                         type="button"
                                         aria-label="Delete message"

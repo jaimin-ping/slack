@@ -12,8 +12,16 @@ export async function requestNotifications(): Promise<NotificationState> {
     return Notification.requestPermission();
 }
 
-export function showNotification(options: { title: string; body: string; tag: string; onClick: () => void }) {
+/** Set once this browser is subscribed to push, so the service worker covers the times the app is not focused. */
+let pushConnected = false;
+
+/**
+ * `pushed`: the server also sends this alert as a push. The service worker shows pushes whenever the app is not
+ * focused and hides them while it is, so the page only alerts while focused; otherwise both would appear.
+ */
+export function showNotification(options: { title: string; body: string; tag: string; onClick: () => void; pushed?: boolean }) {
     if (notificationState() !== 'granted') return;
+    if (options.pushed && pushConnected && !document.hasFocus()) return;
 
     try {
         const notification = new Notification(options.title, { body: options.body, tag: options.tag });
@@ -50,6 +58,7 @@ export async function ensurePush(publicKey: string | null | undefined): Promise<
             }));
 
         await axios.post(route('push.store'), subscription.toJSON());
+        pushConnected = true;
     } catch {
         // Page notifications still work while the app is open.
     }

@@ -7,6 +7,7 @@ use App\Events\MessageSent;
 use App\Events\MessageUpdated;
 use App\Events\ReactionUpdated;
 use App\Jobs\FetchLinkPreview;
+use App\Models\Attachment;
 use App\Models\AuditLog;
 use App\Models\Channel;
 use App\Models\Draft;
@@ -183,7 +184,9 @@ class MessageController extends Controller
     public function destroy(Request $request, Workspace $workspace, Channel $channel, Message $message): HttpResponse
     {
         $user = $request->user();
-        $isAuthor = $message->user_id === $user->id;
+        // An agent's owner answers for what their agent wrote, so they may remove it like their own message.
+        $isAuthor = $message->user_id === $user->id
+            || ($message->ai_agent_id !== null && $message->agent?->owner_id === $user->id);
         abort_unless(($isAuthor || $workspace->isAdmin($user)) && $channel->hasMember($user), 403);
 
         // An admin removing someone else's message is recorded, without its text.
@@ -279,7 +282,7 @@ class MessageController extends Controller
             'message' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $attachment = \App\Models\Attachment::findOrFail($data['attachment_id']);
+        $attachment = Attachment::findOrFail($data['attachment_id']);
 
         // Verify the user has access to the original attachment's channel
         $originalMessage = $attachment->message;

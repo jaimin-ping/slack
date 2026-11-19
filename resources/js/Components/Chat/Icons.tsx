@@ -59,3 +59,4 @@ export const ExternalLinkIcon = (p: P) => <Icon {...p}><path d="M11 5H5v14h14v-6
 export const ImageIcon = (p: P) => <Icon {...p}><rect x="4" y="5" width="16" height="14" rx="1" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="M20 15l-4-4-7 7" /></Icon>;
 export const InfoIcon = (p: P) => <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 16v-4M12 8h.01" /></Icon>;
 export const MoreVerticalIcon = (p: P) => <Icon {...p}><circle cx="12" cy="6" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="18" r="1" /></Icon>;
+export const SparkIcon = (p: P) => <Icon {...p}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3ZM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z" /></Icon>;

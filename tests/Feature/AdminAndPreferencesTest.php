@@ -2,12 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\SendPushNotification;
 use App\Models\Activity;
 use App\Models\Channel;
 use App\Models\PushSubscription;
 use App\Models\User;
 use App\Models\Workspace;
-use App\Jobs\SendPushNotification;
+use App\Services\Invitations;
 use App\Services\PushSender;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -41,7 +42,7 @@ class AdminAndPreferencesTest extends TestCase
         $this->workspace = Workspace::first();
 
         foreach ([$this->admin, $this->member] as $user) {
-            app(\App\Services\Invitations::class)->admit($this->workspace, $user);
+            app(Invitations::class)->admit($this->workspace, $user);
         }
 
         $this->workspace->members()->updateExistingPivot($this->admin->id, ['role' => 'admin']);
@@ -87,6 +88,8 @@ class AdminAndPreferencesTest extends TestCase
     {
         $this->actingAs($this->owner)->post($this->url('/channels'), ['name' => 'random']);
         $random = Channel::where('name', 'random')->first();
+        // Public channels start with their creator only; the admin joins before managing it.
+        $this->actingAs($this->admin)->post($this->url("/c/{$random->id}/join"))->assertRedirect();
         $message = $this->general->messages()->create(['user_id' => $this->member->id, 'body' => 'x']);
 
         $this->actingAs($this->admin)->patch($this->url("/c/{$random->id}"), ['name' => 'renamed'])->assertRedirect();

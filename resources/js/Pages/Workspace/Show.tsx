@@ -43,6 +43,7 @@ import {
 } from '@/Components/Chat/Settings';
 import ShareFileModal from '@/Components/Chat/ShareFileModal';
 import Sidebar from '@/Components/Chat/Sidebar';
+import type { TaskDraft } from '@/Components/AI/TasksPane';
 import ThreadPane from '@/Components/Chat/ThreadPane';
 import TopBar from '@/Components/Chat/TopBar';
 import { echo } from '@/echo';
@@ -64,7 +65,11 @@ import {
 } from '@/types/chat';
 import { Head, router } from '@inertiajs/react';
 import axios from 'axios';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+// The AI panels load on first use, so the chat page itself stays as small as before.
+const AgentsPanel = lazy(() => import('@/Components/AI/AgentsPanel'));
+const TasksPane = lazy(() => import('@/Components/AI/TasksPane'));
 
 interface Props extends Record<string, unknown> {
     workspace: WorkspaceInfo;
@@ -194,6 +199,17 @@ export default function Show({
     const [canvasVersion, setCanvasVersion] = useState(0);
     const [activityUnread, setActivityUnread] = useState(initialActivityUnread);
     const clearActivity = useCallback(() => setActivityUnread(0), []);
+    // The task panel opens beside the conversation; the agents panel takes the main area.
+    const [aiPanel, setAiPanel] = useState<'tasks' | 'agents' | null>(null);
+    const [taskDraft, setTaskDraft] = useState<TaskDraft | null>(null);
+    const clearTaskDraft = useCallback(() => setTaskDraft(null), []);
+    const closeAi = useCallback(() => setAiPanel(null), []);
+    const openAi = (which: 'tasks' | 'agents') => {
+        setAiPanel(which);
+        setNavOpen(false);
+        if (which === 'tasks') setThread(null);
+        if (which === 'agents') setPanel(null);
+    };
 
     const typingTimers = useRef(new Map<number, number>());
     const subscribed = useRef(new Set<number>());
@@ -453,6 +469,7 @@ export default function Show({
                     title: event.sender,
                     body: event.preview,
                     tag: `message-${event.message_id}`,
+                    pushed: true,
                     onClick: () =>
                         openChannel(event.channel_id, event.parent_id),
                 });
@@ -479,6 +496,7 @@ export default function Show({
                         message.cards[0]?.title ||
                         'New message',
                     tag: `message-${message.id}`,
+                    pushed: true,
                     onClick: () => openChannel(message.channel_id),
                 });
             }
@@ -656,9 +674,17 @@ export default function Show({
     const isStarred = current?.starred ?? false;
     const notifyAll = current?.notify_all ?? false;
     const railCurrent: RailItem | null =
-        panel === 'activity' || panel === 'files' ? panel : panel ? null : view;
+        aiPanel ?? (panel === 'activity' || panel === 'files' ? panel : panel ? null : view);
 
     const chooseRail = (item: RailItem) => {
+        if (item === 'tasks' || item === 'agents') {
+            if (aiPanel === item) setAiPanel(null);
+            else openAi(item);
+            return;
+        }
+
+        if (aiPanel === 'agents') setAiPanel(null);
+
         if (item === 'activity' || item === 'files') {
             setPanel(item);
         } else {
@@ -719,6 +745,7 @@ export default function Show({
         const { data } = await axios.get<Thread>(
             route('messages.thread', [workspace.slug, channel.id, message.id]),
         );
+        setAiPanel((current) => (current === 'tasks' ? null : current));
         setThread(data);
     };
 
@@ -937,6 +964,8 @@ export default function Show({
                         panel={panel}
                         onPanel={setPanel}
                         onDirectories={() => setModal('directories')}
+                        onTasks={() => openAi('tasks')}
+                        onAgents={() => openAi('agents')}
                     />
 
                     {panel && (
@@ -947,9 +976,22 @@ export default function Show({
                         />
                     )}
 
+                    {aiPanel === 'agents' && (
+                        <Suspense fallback={<p className="m-auto text-sm text-slate-500">Loading…</p>}>
+                            <AgentsPanel
+                                slug={workspace.slug}
+                                workspaceId={workspace.id}
+                                isAdmin={workspace.is_admin}
+                                me={meMember}
+                                members={members}
+                                onClose={closeAi}
+                            />
+                        </Suspense>
+                    )}
+
                     <main
-                        className={`${navOpen || thread || panel ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col ${
-                            panel ? 'md:hidden' : 'md:flex'
+                        className={`${navOpen || thread || panel || aiPanel ? 'hidden' : 'flex'} min-w-0 flex-1 flex-col ${
+                            panel || aiPanel === 'agents' ? 'md:hidden' : 'md:flex'
                         }`}
                     >
                         <header className="relative flex h-12 shrink-0 items-center gap-2 border-b border-slate-200 px-4">
@@ -1193,6 +1235,13 @@ export default function Show({
                                 onAttachmentShare={shareAttachment}
                                 onAttachmentDetails={viewAttachmentDetails}
                                 onAttachmentDelete={deleteAttachment}
+                                onCreateTask={(message) => {
+                                    setTaskDraft({
+                                        title: (message.body.split('\n')[0] || 'Follow up on this message').slice(0, 200),
+                                        source_message_id: message.id,
+                                    });
+                                    openAi('tasks');
+                                }}
                             />
 
                             {notice && (
@@ -1280,6 +1329,20 @@ export default function Show({
                             onAttachmentDetails={viewAttachmentDetails}
                             onAttachmentDelete={deleteAttachment}
                         />
+                    )}
+
+                    {aiPanel === 'tasks' && !thread && (
+                        <Suspense fallback={<p className="p-4 text-sm text-slate-500 md:w-[26rem]">Loading…</p>}>
+                            <TasksPane
+                                slug={workspace.slug}
+                                workspaceId={workspace.id}
+                                me={meMember}
+                                members={members}
+                                draft={taskDraft}
+                                onDraftUsed={clearTaskDraft}
+                                onClose={closeAi}
+                            />
+                        </Suspense>
                     )}
                 </div>
             </div>

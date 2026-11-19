@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\UserGroup;
 use App\Models\Workflow;
 use App\Models\Workspace;
+use App\Services\Invitations;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -40,7 +41,7 @@ class BatchFourTest extends TestCase
 
         $this->actingAs($this->owner)->post('/workspaces', ['name' => 'Acme']);
         $this->workspace = Workspace::first();
-        app(\App\Services\Invitations::class)->admit($this->workspace, $this->member);
+        app(Invitations::class)->admit($this->workspace, $this->member);
         $this->general = $this->workspace->channels()->first();
     }
 
@@ -111,6 +112,8 @@ class BatchFourTest extends TestCase
     {
         $this->actingAs($this->owner)->post($this->url('/channels'), ['name' => 'random']);
         $random = Channel::where('name', 'random')->first();
+        // Public channels start with their creator only; the member joins before scheduling there.
+        $this->actingAs($this->member)->post($this->url("/c/{$random->id}/join"))->assertRedirect();
         $this->actingAs($this->member)->postJson($this->url("/c/{$random->id}/schedule"), [
             'body' => 'later',
             'send_at' => now()->addMinute()->toIso8601String(),
@@ -308,8 +311,8 @@ class BatchFourTest extends TestCase
         ]);
 
         $person = User::factory()->create(['name' => 'New Person']);
-        app(\App\Services\Invitations::class)->admit($this->workspace, $person);
-        app(\App\Services\Invitations::class)->admit($this->workspace, $person);
+        app(Invitations::class)->admit($this->workspace, $person);
+        app(Invitations::class)->admit($this->workspace, $person);
 
         $this->assertSame(['Welcome New Person!'], $this->general->messages()->pluck('body')->all());
     }

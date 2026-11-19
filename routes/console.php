@@ -1,9 +1,10 @@
 <?php
 
 use App\Models\User;
+use App\Services\AI\AgentScheduler;
 use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
 
 Artisan::command('inspire', function () {
@@ -33,3 +34,10 @@ Artisan::command('chat:first-user {email} {name}', function (string $email, stri
 })->purpose('Add the first person to a new server');
 
 Schedule::command('chat:run-due')->everyMinute()->withoutOverlapping();
+
+// Personal AI agents: daily summaries, overdue alerts and permitted follow-ups. No AI model is used here.
+Artisan::command('agents:run-scheduled', function (AgentScheduler $scheduler) {
+    $this->info($scheduler->runDue().' agent(s) had something to do.');
+})->purpose('Run scheduled work for personal AI agents');
+
+Schedule::command('agents:run-scheduled')->everyFiveMinutes()->withoutOverlapping();

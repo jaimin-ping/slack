@@ -12,7 +12,7 @@ class Message extends Model
 {
     protected $fillable = [
         'channel_id', 'user_id', 'body', 'parent_id', 'webhook_id', 'bot_name', 'cards', 'edited_at', 'removed_at',
-        'pinned_at', 'pinned_by', 'link_preview',
+        'pinned_at', 'pinned_by', 'link_preview', 'ai_agent_id',
     ];
 
     protected function casts(): array
@@ -35,6 +35,12 @@ class Message extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /** The AI agent that wrote this message, if any. Such messages have no user_id. */
+    public function agent(): BelongsTo
+    {
+        return $this->belongsTo(AiAgent::class, 'ai_agent_id');
     }
 
     public function reactions(): HasMany
@@ -70,6 +76,26 @@ class Message extends Model
             ->all();
     }
 
+    /** @return array<string, mixed>|null */
+    private function agentPayload(): ?array
+    {
+        if ($this->ai_agent_id === null) {
+            return null;
+        }
+
+        // Loaded only for agent messages, which are few; lists of people's messages are unaffected.
+        $agent = $this->loadMissing('agent.owner:id,name')->agent;
+
+        return $agent ? [
+            'id' => $agent->id,
+            'name' => $agent->name,
+            'owner_id' => $agent->owner_id,
+            'owner_name' => $agent->owner?->name,
+            'avatar_url' => $agent->avatarUrl(),
+            'avatar_preset' => $agent->avatar_preset,
+        ] : null;
+    }
+
     /** @return array<string, mixed> */
     public function toPayload(): array
     {
@@ -84,6 +110,8 @@ class Message extends Model
             'pinned' => $this->pinned_at !== null,
             'link_preview' => $this->link_preview,
             'is_bot' => $this->user_id === null,
+            // Added for AI agents; older clients ignore it and still show the "(AI Assistant)" bot name.
+            'agent' => $this->agentPayload(),
             'user' => $this->user
                 ? ['id' => $this->user->id, 'name' => $this->user->name]
                 : ['id' => 0, 'name' => $this->bot_name ?? 'App'],

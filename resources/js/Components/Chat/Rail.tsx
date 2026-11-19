@@ -1,5 +1,5 @@
 import Avatar from '@/Components/Chat/Avatar';
-import { BellIcon, ChatIcon, FileIcon, HomeIcon } from '@/Components/Chat/Icons';
+import { BellIcon, ChatIcon, CheckCircleIcon, FileIcon, HomeIcon, SparkIcon } from '@/Components/Chat/Icons';
 import { ProfileMenu } from '@/Components/Chat/Menus';
 import { RailItem, WorkspaceInfo, WorkspaceMember } from '@/types/chat';
 import { Link } from '@inertiajs/react';
@@ -22,6 +22,8 @@ const ITEMS: { item: RailItem; label: string; icon: ComponentType<SVGAttributes<
     { item: 'dms', label: 'DMs', icon: ChatIcon },
     { item: 'activity', label: 'Activity', icon: BellIcon },
     { item: 'files', label: 'Files', icon: FileIcon },
+    { item: 'tasks', label: 'Tasks', icon: CheckCircleIcon },
+    { item: 'agents', label: 'Agents', icon: SparkIcon },
 ];
 
 export default function Rail({ workspace, me, current, activityUnread, onChange, onStatus, onPhoto, onPreferences, onToggleAway }: Props) {

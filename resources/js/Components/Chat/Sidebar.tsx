@@ -1,5 +1,17 @@
 import Avatar from '@/Components/Chat/Avatar';
-import { BookmarkIcon, CaretIcon, ComposeIcon, FolderIcon, LockIcon, PencilIcon, PlusIcon, SearchIcon, ThreadIcon } from '@/Components/Chat/Icons';
+import {
+    BookmarkIcon,
+    CaretIcon,
+    CheckCircleIcon,
+    ComposeIcon,
+    FolderIcon,
+    LockIcon,
+    PencilIcon,
+    PlusIcon,
+    SearchIcon,
+    SparkIcon,
+    ThreadIcon,
+} from '@/Components/Chat/Icons';
 import { WorkspaceMenu } from '@/Components/Chat/Menus';
 import {
     ActiveChannel,
@@ -36,6 +48,9 @@ interface Props {
     panel: InfoPanelName | null;
     onPanel: (panel: InfoPanelName) => void;
     onDirectories: () => void;
+    /** Shortcuts to the task panel and AI agents, for small screens where the rail is hidden. */
+    onTasks?: () => void;
+    onAgents?: () => void;
 }
 
 const COLLAPSED_KEY = 'chat.sidebar.collapsed';
@@ -158,6 +173,8 @@ export default function Sidebar({
     panel,
     onPanel,
     onDirectories,
+    onTasks,
+    onAgents,
 }: Props) {
     const [filter, setFilter] = useState('');
     const [menuOpen, setMenuOpen] = useState(false);
@@ -343,6 +360,20 @@ export default function Sidebar({
                                     <BookmarkIcon className="h-4 w-4 shrink-0" /> Saved items
                                 </Row>
                             </button>
+                            {onTasks && (
+                                <button type="button" onClick={onTasks} className="block w-full md:hidden">
+                                    <Row active={false} unread={0}>
+                                        <CheckCircleIcon className="h-4 w-4 shrink-0" /> Tasks
+                                    </Row>
+                                </button>
+                            )}
+                            {onAgents && (
+                                <button type="button" onClick={onAgents} className="block w-full md:hidden">
+                                    <Row active={false} unread={0}>
+                                        <SparkIcon className="h-4 w-4 shrink-0" /> AI agents
+                                    </Row>
+                                </button>
+                            )}
                             <button type="button" onClick={onDirectories} className="block w-full">
                                 <Row active={false} unread={0}>
                                     <FolderIcon className="h-4 w-4 shrink-0" /> Directories

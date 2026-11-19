@@ -1,5 +1,10 @@
 <?php
 
+use App\Http\Controllers\AI\AgentActivityController;
+use App\Http\Controllers\AI\AgentChatController;
+use App\Http\Controllers\AI\AgentController;
+use App\Http\Controllers\AI\AgentMemoryController;
+use App\Http\Controllers\AI\ApprovalController;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\AvatarController;
 use App\Http\Controllers\CanvasController;
@@ -14,6 +19,7 @@ use App\Http\Controllers\SavedItemController;
 use App\Http\Controllers\SectionController;
 use App\Http\Controllers\SlashCommandController;
 use App\Http\Controllers\StatusController;
+use App\Http\Controllers\Tasks\TaskController;
 use App\Http\Controllers\TodoController;
 use App\Http\Controllers\WorkspaceToolsController;
 use Illuminate\Http\Request;
@@ -102,6 +108,61 @@ Route::prefix('api/v1')->name('api.')->group(function () {
         Route::delete('/w/{workspace:slug}/scheduled/{item}', [WorkspaceToolsController::class, 'cancelScheduled'])->name('scheduled.destroy');
         Route::post('/w/{workspace:slug}/sections', [WorkspaceToolsController::class, 'storeSection'])->name('sections.store');
         Route::post('/w/{workspace:slug}/dm/{user}', [ChannelController::class, 'direct'])->name('direct');
+
+        // Workspace tasks: the same actions and rules as the web app.
+        Route::prefix('/w/{workspace:slug}/tasks')->name('tasks.')->group(function () {
+            Route::get('/', [TaskController::class, 'index'])->name('index');
+            Route::get('/counts', [TaskController::class, 'counts'])->name('counts');
+            Route::post('/', [TaskController::class, 'store'])->middleware('throttle:60,1')->name('store');
+            Route::get('/{task}', [TaskController::class, 'show'])->whereNumber('task')->name('show');
+
+            Route::whereNumber('task')->middleware('throttle:120,1')->group(function () {
+                Route::patch('/{task}', [TaskController::class, 'update'])->name('update');
+                Route::delete('/{task}', [TaskController::class, 'destroy'])->name('destroy');
+                Route::post('/{task}/status', [TaskController::class, 'status'])->name('status');
+                Route::post('/{task}/pause', [TaskController::class, 'pause'])->name('pause');
+                Route::post('/{task}/resume', [TaskController::class, 'resume'])->name('resume');
+                Route::post('/{task}/approve', [TaskController::class, 'approve'])->name('approve');
+                Route::post('/{task}/reject', [TaskController::class, 'reject'])->name('reject');
+                Route::put('/{task}/assignees', [TaskController::class, 'assignees'])->name('assignees');
+                Route::post('/{task}/comments', [TaskController::class, 'comment'])->name('comments');
+                Route::post('/{task}/archive', [TaskController::class, 'archive'])->name('archive');
+                Route::post('/{task}/unarchive', [TaskController::class, 'unarchive'])->name('unarchive');
+            });
+        });
+
+        // Personal AI agents: the same actions and rules as the web app.
+        Route::get('/agents/{agent}/avatar', [AgentController::class, 'avatar'])->whereNumber('agent')->name('agents.avatar');
+        Route::prefix('/w/{workspace:slug}/agents')->name('agents.')->group(function () {
+            Route::get('/', [AgentController::class, 'index'])->name('index');
+            Route::get('/options', [AgentController::class, 'options'])->name('options');
+            Route::get('/usage', [AgentActivityController::class, 'usage'])->name('usage');
+            Route::post('/', [AgentController::class, 'store'])->middleware('throttle:20,1')->name('store');
+
+            Route::get('/{agent}', [AgentController::class, 'show'])->whereNumber('agent')->name('show');
+            Route::post('/{agent}/analyze', [AgentChatController::class, 'analyze'])->whereNumber('agent')->middleware('throttle:5,1')->name('analyze');
+
+            Route::whereNumber('agent')->middleware('throttle:60,1')->group(function () {
+                Route::get('/{agent}/memories', [AgentMemoryController::class, 'index'])->name('memories.index');
+                Route::post('/{agent}/memories', [AgentMemoryController::class, 'store'])->name('memories.store');
+                Route::patch('/{agent}/memories/{memory}', [AgentMemoryController::class, 'update'])->whereNumber('memory')->name('memories.update');
+                Route::delete('/{agent}/memories/{memory}', [AgentMemoryController::class, 'destroy'])->whereNumber('memory')->name('memories.destroy');
+                Route::get('/{agent}/runs', [AgentActivityController::class, 'runs'])->name('runs.index');
+                Route::get('/{agent}/runs/{run}', [AgentActivityController::class, 'run'])->whereNumber('run')->name('runs.show');
+                Route::get('/{agent}/chat', [AgentChatController::class, 'index'])->name('chat.index');
+                Route::post('/{agent}/chat', [AgentChatController::class, 'store'])->name('chat.store');
+                Route::patch('/{agent}', [AgentController::class, 'update'])->name('update');
+                Route::delete('/{agent}', [AgentController::class, 'destroy'])->name('destroy');
+                Route::post('/{agent}/status', [AgentController::class, 'status'])->name('status');
+                Route::put('/{agent}/sources', [AgentController::class, 'sources'])->name('sources');
+                Route::put('/{agent}/permissions', [AgentController::class, 'permissions'])->name('permissions');
+                Route::post('/{agent}/avatar', [AgentController::class, 'storeAvatar'])->name('avatar.store');
+                Route::delete('/{agent}/avatar', [AgentController::class, 'destroyAvatar'])->name('avatar.destroy');
+            });
+        });
+        Route::get('/w/{workspace:slug}/approvals', [ApprovalController::class, 'index'])->name('approvals.index');
+        Route::post('/w/{workspace:slug}/approvals/{approval}/approve', [ApprovalController::class, 'approve'])->whereNumber('approval')->middleware('throttle:60,1')->name('approvals.approve');
+        Route::post('/w/{workspace:slug}/approvals/{approval}/reject', [ApprovalController::class, 'reject'])->whereNumber('approval')->middleware('throttle:60,1')->name('approvals.reject');
 
         Route::scopeBindings()->prefix('/w/{workspace:slug}/c/{channel}')->group(function () {
             Route::post('/read', [ChannelController::class, 'read'])->name('read');

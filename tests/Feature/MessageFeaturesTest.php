@@ -8,6 +8,7 @@ use App\Models\Channel;
 use App\Models\Message;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Invitations;
 use App\Services\LinkPreviewer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -36,7 +37,7 @@ class MessageFeaturesTest extends TestCase
 
         $this->actingAs($this->owner)->post('/workspaces', ['name' => 'Acme']);
         $this->workspace = Workspace::first();
-        app(\App\Services\Invitations::class)->admit($this->workspace, $this->member);
+        app(Invitations::class)->admit($this->workspace, $this->member);
         $this->general = $this->workspace->channels()->first();
     }
 
@@ -103,6 +104,8 @@ class MessageFeaturesTest extends TestCase
     {
         $this->actingAs($this->owner)->post($this->url('/channels'), ['name' => 'random']);
         $random = Channel::where('name', 'random')->first();
+        // Public channels start with their creator only; the member joins before forwarding there.
+        $this->actingAs($this->member)->post($this->url("/c/{$random->id}/join"))->assertRedirect();
         $message = $this->message('original text');
 
         $this->actingAs($this->member)

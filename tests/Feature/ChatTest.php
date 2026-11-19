@@ -13,6 +13,7 @@ use App\Models\Draft;
 use App\Models\User;
 use App\Models\Webhook;
 use App\Models\Workspace;
+use App\Services\Invitations;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
@@ -40,7 +41,7 @@ class ChatTest extends TestCase
 
         $this->actingAs($this->owner)->post('/workspaces', ['name' => 'Acme']);
         $this->workspace = Workspace::first();
-        app(\App\Services\Invitations::class)->admit($this->workspace, $this->member);
+        app(Invitations::class)->admit($this->workspace, $this->member);
         $this->general = $this->workspace->channels()->where('name', 'general')->first();
     }
 
@@ -100,11 +101,17 @@ class ChatTest extends TestCase
         $this->assertFalse($team->hasMember($outsider));
     }
 
-    public function test_public_channel_includes_every_member(): void
+    public function test_public_channel_starts_with_its_creator_and_others_join_it(): void
     {
+        // Public channels start with only their creator; everyone else can find them in Browse and join.
         $this->actingAs($this->owner)->post($this->url('/channels'), ['name' => 'random']);
+        $random = Channel::where('name', 'random')->first();
 
-        $this->assertTrue(Channel::where('name', 'random')->first()->hasMember($this->member));
+        $this->assertTrue($random->hasMember($this->owner));
+        $this->assertFalse($random->hasMember($this->member));
+
+        $this->actingAs($this->member)->post($this->url("/c/{$random->id}/join"))->assertRedirect();
+        $this->assertTrue($random->hasMember($this->member));
     }
 
     public function test_duplicate_channel_name_is_rejected(): void
@@ -153,8 +160,7 @@ class ChatTest extends TestCase
 
     public function test_unread_counts_rise_for_others_and_clear_on_open(): void
     {
-        $this->actingAs($this->owner)->post($this->url('/channels'), ['name' => 'random']);
-        $random = Channel::where('name', 'random')->first();
+        $random = $this->makeChannel();
 
         $this->actingAs($this->owner)->postJson($this->url("/c/{$random->id}/messages"), ['body' => 'one']);
         $this->actingAs($this->owner)->postJson($this->url("/c/{$random->id}/messages"), ['body' => 'two']);
@@ -329,11 +335,7 @@ class ChatTest extends TestCase
 
     private function random(): Channel
     {
-        if (! Channel::where('name', 'random')->exists()) {
-            $this->actingAs($this->owner)->post($this->url('/channels'), ['name' => 'random']);
-        }
-
-        return Channel::where('name', 'random')->first();
+        return Channel::where('name', 'random')->first() ?? $this->makeChannel();
     }
 
     public function test_threads_cannot_nest_or_cross_channels(): void
@@ -638,7 +640,7 @@ class ChatTest extends TestCase
     public function test_thread_replies_reach_participants_but_not_the_sender(): void
     {
         $third = User::factory()->create();
-        app(\App\Services\Invitations::class)->admit($this->workspace, $third);
+        app(Invitations::class)->admit($this->workspace, $third);
 
         $parent = $this->say($this->owner, $this->general, 'parent');
         $this->say($this->member, $this->general, 'first', $parent);
@@ -909,11 +911,14 @@ class ChatTest extends TestCase
         $this->assertArrayNotHasKey('avatar_path', $props['auth']['user']);
     }
 
+    /** A public channel the owner created and the member joined, as people do now that public channels start with their creator. */
     private function makeChannel(string $name = 'random'): Channel
     {
         $this->actingAs($this->owner)->post($this->url('/channels'), ['name' => $name]);
+        $channel = Channel::where('name', $name)->first();
+        $this->actingAs($this->member)->post($this->url("/c/{$channel->id}/join"))->assertRedirect();
 
-        return Channel::where('name', $name)->first();
+        return $channel;
     }
 
     private function sidebarOf(User $user, ?Channel $open = null): array
