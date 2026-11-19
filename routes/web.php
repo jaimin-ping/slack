@@ -19,6 +19,7 @@ use App\Http\Controllers\PreferencesController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\SlashCommandController;
+use App\Http\Controllers\GoogleAuthController;
 use App\Http\Controllers\SsoController;
 use App\Http\Controllers\StatusController;
 use App\Http\Controllers\Tasks\TaskController;
@@ -33,6 +34,14 @@ Route::redirect('/', '/dashboard');
 Route::get('/sso/redirect', [SsoController::class, 'redirect'])->middleware('throttle:20,1')->name('sso.redirect');
 Route::get('/sso/mobile', [SsoController::class, 'mobile'])->middleware('throttle:20,1')->name('sso.mobile');
 Route::get('/sso/callback', [SsoController::class, 'callback'])->middleware('throttle:20,1')->name('sso.callback');
+
+// Google OAuth - exclude mobile route from Inertia to prevent 409 conflicts
+Route::get('/auth/google', [GoogleAuthController::class, 'redirect'])->middleware('throttle:20,1')->name('google.redirect');
+Route::get('/auth/google/mobile', [GoogleAuthController::class, 'mobile'])
+    ->middleware('throttle:20,1')
+    ->withoutMiddleware(\App\Http\Middleware\HandleInertiaRequests::class)
+    ->name('google.mobile');
+Route::get('/auth/google/callback', [GoogleAuthController::class, 'callback'])->middleware('throttle:20,1')->name('google.callback');
 
 Route::middleware('guest')->group(function () {
     Route::get('/two-factor-challenge', [TwoFactorController::class, 'challenge'])->name('two-factor.challenge');

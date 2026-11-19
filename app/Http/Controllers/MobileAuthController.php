@@ -97,6 +97,14 @@ class MobileAuthController extends Controller
         return response()->json(['name' => $sso->enabled() ? config('services.sso.name') : null]);
     }
 
+    /** Tells the login screen whether Google Sign-In is available. */
+    public function googleEnabled(): JsonResponse
+    {
+        $enabled = !empty(config('services.google.client_id')) && !empty(config('services.google.client_secret'));
+
+        return response()->json(['enabled' => $enabled]);
+    }
+
     /** Swaps the code from the browser for a token. The code works once, and only with its verifier. */
     public function ssoExchange(Request $request, TwoFactor $twoFactor): JsonResponse
     {
@@ -108,6 +116,40 @@ class MobileAuthController extends Controller
         ]);
 
         $key = 'sso.mobile.'.hash('sha256', $data['code']);
+        $grant = Cache::pull($key);
+        $challenge = rtrim(strtr(base64_encode(hash('sha256', $data['verifier'], true)), '+/', '-_'), '=');
+        $user = $grant && hash_equals($grant['challenge'], $challenge) ? User::find($grant['user']) : null;
+
+        if (! $user) {
+            return response()->json(['message' => 'That sign in has expired. Please start again.'], 422);
+        }
+
+        if ($user->two_factor_enabled && ! (isset($data['two_factor_code']) && $twoFactor->passes($user, $data['two_factor_code']))) {
+            Cache::put($key, $grant, self::SSO_RETRY_SECONDS);
+
+            return response()->json([
+                'message' => isset($data['two_factor_code']) ? 'That code is not right.' : 'Enter the code from your authenticator app.',
+                'two_factor_required' => true,
+            ], 422);
+        }
+
+        return response()->json([
+            'token' => $user->createToken($data['device_name'])->plainTextToken,
+            'user' => $this->userPayload($user),
+        ]);
+    }
+
+    /** Swaps the Google OAuth code from the browser for a token. */
+    public function googleExchange(Request $request, TwoFactor $twoFactor): JsonResponse
+    {
+        $data = $request->validate([
+            'code' => ['required', 'string', 'max:100'],
+            'verifier' => ['required', 'string', 'min:43', 'max:128'],
+            'device_name' => ['required', 'string', 'max:100'],
+            'two_factor_code' => ['nullable', 'string', 'max:20'],
+        ]);
+
+        $key = 'google.mobile.'.hash('sha256', $data['code']);
         $grant = Cache::pull($key);
         $challenge = rtrim(strtr(base64_encode(hash('sha256', $data['verifier'], true)), '+/', '-_'), '=');
         $user = $grant && hash_equals($grant['challenge'], $challenge) ? User::find($grant['user']) : null;
