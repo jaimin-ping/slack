@@ -206,13 +206,27 @@ class ChannelController extends Controller
 
     public function addMembers(Request $request, Workspace $workspace, Channel $channel): RedirectResponse
     {
-        abort_unless($channel->hasMember($request->user()) && $channel->type === Channel::PRIVATE, 403);
+        abort_unless($channel->hasMember($request->user()) && $channel->type !== Channel::DM && ! $channel->archived_at, 403);
 
         $data = $request->validate(['member_ids' => ['required', 'array'], 'member_ids.*' => ['integer']]);
 
         $ids = $workspace->members()->whereIn('users.id', $data['member_ids'])->pluck('users.id')->all();
         $channel->members()->syncWithoutDetaching($ids);
         $this->notifySidebar($workspace, $ids);
+
+        return back();
+    }
+
+    public function removeMember(Request $request, Workspace $workspace, Channel $channel, User $user): RedirectResponse
+    {
+        $actor = $request->user();
+        // This route skips scoped bindings (users aren't a channel relation), so check the workspace here.
+        abort_unless($channel->workspace_id === $workspace->id, 404);
+        abort_unless($channel->hasMember($actor) && $channel->canManage($actor, $workspace), 403);
+        abort_if($channel->isDefault() || $user->id === $actor->id, 422);
+
+        $channel->members()->detach($user->id);
+        $this->notifySidebar($workspace, [$user->id]);
 
         return back();
     }

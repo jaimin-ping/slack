@@ -133,7 +133,7 @@ export default function ChannelSettings({
                     </div>
                 </form>
 
-                {channel.type === 'private' && nonMembers.length > 0 && (
+                {channel.type !== 'dm' && !channel.archived && nonMembers.length > 0 && (
                     <form
                         onSubmit={(e: FormEvent) => {
                             e.preventDefault();

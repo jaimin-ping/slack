@@ -24,6 +24,8 @@ import {
     StarIcon,
     UsersIcon,
 } from '@/Components/Chat/Icons';
+import Avatar from '@/Components/Chat/Avatar';
+import ChannelMembersModal from '@/Components/Chat/ChannelMembersModal';
 import InviteModal from '@/Components/Chat/InviteModal';
 import MessageList from '@/Components/Chat/MessageList';
 import NewChannelModal from '@/Components/Chat/NewChannelModal';
@@ -1109,12 +1111,25 @@ export default function Show({
                             {channel.type !== 'dm' && (
                                 <button
                                     type="button"
-                                    onClick={() => setMembersOpen(!membersOpen)}
-                                    aria-expanded={membersOpen}
+                                    onClick={() => setMembersOpen(true)}
+                                    aria-haspopup="dialog"
                                     aria-label={`${channelMembers.length} members`}
-                                    className="flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
+                                    title="View all members of this channel"
+                                    className="flex items-center gap-1.5 rounded border border-slate-200 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
                                 >
-                                    <UsersIcon className="h-4 w-4" />
+                                    {channelMembers.length > 0 ? (
+                                        <span className="flex -space-x-1.5">
+                                            {channelMembers.slice(0, 3).map((m) => (
+                                                <Avatar
+                                                    key={m.id}
+                                                    user={m}
+                                                    className="h-5 w-5 rounded text-[10px] ring-2 ring-white"
+                                                />
+                                            ))}
+                                        </span>
+                                    ) : (
+                                        <UsersIcon className="h-4 w-4" />
+                                    )}
                                     {channelMembers.length}
                                 </button>
                             )}
@@ -1146,35 +1161,6 @@ export default function Show({
                                 </div>
                             )}
 
-                            {membersOpen && channel.type !== 'dm' && (
-                                <ul className="absolute right-4 top-11 z-30 max-h-72 w-60 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
-                                    {channelMembers.map((member) => (
-                                        <li
-                                            key={member.id}
-                                            className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-800"
-                                        >
-                                            <span
-                                                className={`h-2 w-2 shrink-0 rounded-full ${
-                                                    online.has(member.id) &&
-                                                    !member.is_away
-                                                        ? 'bg-emerald-500'
-                                                        : 'bg-slate-300'
-                                                }`}
-                                            />
-                                            <span className="min-w-0">
-                                                <span className="block truncate">
-                                                    {member.name}
-                                                </span>
-                                                {member.title && (
-                                                    <span className="block truncate text-xs text-slate-500">
-                                                        {member.title}
-                                                    </span>
-                                                )}
-                                            </span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
                         </header>
 
                         <div
@@ -1432,6 +1418,16 @@ export default function Show({
                     onShare={handleShareFile}
                 />
             )}
+            <ChannelMembersModal
+                show={membersOpen && channel.type !== 'dm'}
+                workspace={workspace}
+                channel={channel}
+                meId={me.id}
+                members={members}
+                channelMemberIds={channelMemberIds}
+                online={online}
+                onClose={() => setMembersOpen(false)}
+            />
             <MembersModal
                 show={modal === 'members'}
                 workspace={workspace}

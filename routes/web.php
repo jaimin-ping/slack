@@ -184,6 +184,7 @@ Route::middleware('auth')->group(function () {
         Route::patch('/w/{workspace:slug}/c/{channel}', [ChannelController::class, 'update'])->name('channels.update');
         Route::delete('/w/{workspace:slug}/c/{channel}', [ChannelController::class, 'destroy'])->name('channels.destroy');
         Route::post('/w/{workspace:slug}/c/{channel}/members', [ChannelController::class, 'addMembers'])->name('channels.members');
+        Route::delete('/w/{workspace:slug}/c/{channel}/members/{user}', [ChannelController::class, 'removeMember'])->name('channels.members.remove')->withoutScopedBindings();
         Route::post('/w/{workspace:slug}/c/{channel}/leave', [ChannelController::class, 'leave'])->name('channels.leave');
         Route::post('/w/{workspace:slug}/c/{channel}/join', [ChannelController::class, 'join'])->name('channels.join');
         Route::post('/w/{workspace:slug}/c/{channel}/archive', [ChannelController::class, 'archive'])->name('channels.archive');
