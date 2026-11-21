@@ -196,14 +196,19 @@ export default function Sidebar({
     const term = filter.trim().toLowerCase();
     const matches = (name: string | null) => !term || (name ?? '').toLowerCase().includes(term);
 
-    const dmByUser = new Map(channels.filter((c) => c.type === 'dm').map((c) => [c.dm_user_id, c]));
+    const dmByUser = new Map(channels.filter((c) => c.type === 'dm' && c.dm_user_id !== null).map((c) => [c.dm_user_id, c]));
+    const groupNameOf = (c: SidebarChannel) =>
+        (c.dm_user_ids ?? []).map((id) => members.find((m) => m.id === id)?.name ?? 'Someone').join(', ');
+    const groupDms = channels.filter((c) => c.type === 'dm' && (c.dm_user_ids?.length ?? 0) > 0 && matches(groupNameOf(c)));
     const people = members.filter((m) => m.id !== me.id && matches(m.name));
     const self = members.find((m) => m.id === me.id);
-    const nameOf = (c: SidebarChannel) => members.find((m) => m.id === c.dm_user_id)?.name ?? null;
+    const nameOf = (c: SidebarChannel) =>
+        c.dm_user_ids?.length ? groupNameOf(c) : (members.find((m) => m.id === c.dm_user_id)?.name ?? null);
     const named = channels.filter((c) => c.type !== 'dm' && matches(c.name));
     const starred = channels.filter((c) => c.starred && matches(c.type === 'dm' ? nameOf(c) : c.name));
 
     const channelLink = (c: SidebarChannel) => {
+        if (c.type === 'dm' && c.dm_user_ids?.length) return groupRow(c);
         if (c.type === 'dm') {
             const person = members.find((m) => m.id === c.dm_user_id);
             return person ? personRow(person) : null;
@@ -222,6 +227,17 @@ export default function Sidebar({
             </Link>
         );
     };
+
+    const groupRow = (c: SidebarChannel) => (
+        <Link key={c.id} href={route('channels.show', [workspace.slug, c.id])} className="block">
+            <Row active={!panel && c.id === channel.id} unread={c.muted ? 0 : c.unread} muted={c.muted}>
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-white/15 text-[10px] font-bold">
+                    {(c.dm_user_ids?.length ?? 0) + 1}
+                </span>
+                <span className="truncate">{groupNameOf(c)}</span>
+            </Row>
+        </Link>
+    );
 
     const personRow = (person: WorkspaceMember) => {
         const dm = dmByUser.get(person.id);
@@ -333,6 +349,7 @@ export default function Sidebar({
                 {view === 'dms' && (
                     <div>
                         <h2 className="px-2 py-1 text-[15px] font-semibold">Direct messages</h2>
+                        {groupDms.map(groupRow)}
                         {people.map(personRow)}
                     </div>
                 )}
@@ -426,6 +443,7 @@ export default function Sidebar({
                             addLabel="New direct message"
                             onAdd={onNewDm}
                         >
+                            {groupDms.filter((c) => !c.starred).map(groupRow)}
                             {self && matches(self.name) && personRow(self)}
                             {people.filter((p) => !dmByUser.get(p.id)?.starred).map(personRow)}
                             <button type="button" onClick={onInvite} className={action}>

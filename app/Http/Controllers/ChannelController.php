@@ -53,7 +53,13 @@ class ChannelController extends Controller
                 'name' => $channel->name,
                 'type' => $channel->type,
                 'dm_user_id' => $channel->dmPartnerId($user->id),
+                'dm_user_ids' => $channel->groupDmOthers($user->id),
                 'topic' => $channel->topic,
+                'description' => $channel->description,
+                'created_by_name' => $channel->creator?->name,
+                'created_at' => $channel->created_at?->toIso8601String(),
+                'is_default' => $channel->isDefault(),
+                'bookmarks' => $channel->bookmarks->map->toPayload()->all(),
                 'can_manage' => $channel->canManage($user, $workspace),
                 'can_delete' => $channel->canManage($user, $workspace) && ! $channel->isDefault(),
                 'can_leave' => $channel->type !== Channel::DM && ! $channel->isDefault(),
@@ -84,11 +90,26 @@ class ChannelController extends Controller
 
         $data = $request->validate([
             'topic' => ['nullable', 'string', 'max:250'],
+            'description' => ['nullable', 'string', 'max:500'],
             'name' => ['sometimes', 'required', 'string', 'max:60'],
+            'make_private' => ['sometimes', 'accepted'],
         ]);
 
         if ($request->has('topic')) {
             $channel->update(['topic' => $data['topic'] ?? null]);
+        }
+
+        if ($request->has('description')) {
+            $channel->update(['description' => $data['description'] ?? null]);
+        }
+
+        // Like Slack, a public channel can become private, but not back.
+        if ($request->boolean('make_private')) {
+            abort_unless($channel->canManage($user, $workspace) && $channel->type === Channel::PUBLIC && ! $channel->isDefault(), 403);
+
+            AuditLog::record($workspace, $user, 'channel.made_private', '#'.$channel->name);
+            $channel->update(['type' => Channel::PRIVATE]);
+            $this->notifyOthers($workspace, $channel, $user);
         }
 
         if (isset($data['name'])) {
@@ -377,6 +398,47 @@ class ChannelController extends Controller
         return $this->toChannel($request, $workspace, $channel);
     }
 
+    /** Opens (or creates) a DM with several people at once, like Slack's group DMs. */
+    public function groupDirect(Request $request, Workspace $workspace): RedirectResponse|JsonResponse
+    {
+        $me = $request->user();
+        abort_unless($workspace->hasMember($me), 403);
+
+        $data = $request->validate([
+            'user_ids' => ['required', 'array', 'min:1', 'max:8'],
+            'user_ids.*' => ['integer'],
+        ]);
+
+        $others = $workspace->members()
+            ->whereIn('users.id', $data['user_ids'])
+            ->whereKeyNot($me->id)
+            ->pluck('users.id')
+            ->all();
+
+        if ($others === []) {
+            throw ValidationException::withMessages(['user_ids' => 'Pick at least one person.']);
+        }
+
+        if (count($others) === 1) {
+            return $this->direct($request, $workspace, User::findOrFail($others[0]));
+        }
+
+        $everyone = [...$others, $me->id];
+        $channel = $workspace->channels()->createOrFirst(
+            ['dm_key' => Channel::groupDmKey($everyone)],
+            ['type' => Channel::DM, 'created_by' => $me->id],
+        );
+        $channel->members()->syncWithoutDetaching($everyone);
+
+        if ($channel->wasRecentlyCreated) {
+            $this->notifySidebar($workspace, $others);
+        }
+
+        return $request->expectsJson()
+            ? response()->json(['channel_id' => $channel->id])
+            : redirect()->route('channels.show', [$workspace->slug, $channel->id]);
+    }
+
     public function direct(Request $request, Workspace $workspace, User $user): RedirectResponse|JsonResponse
     {
         $me = $request->user();
@@ -419,7 +481,7 @@ class ChannelController extends Controller
             $lastReadId = $channel->members()->whereKey($user->id)->first()->pivot->last_read_message_id ?? 0;
 
             $firstUnreadId = $channel->messages()
-                ->whereNull('parent_id')
+                ->inChannelView()
                 ->where('id', '>', $lastReadId)
                 ->where(fn ($q) => $q->whereNull('user_id')->orWhere('user_id', '!=', $user->id))
                 ->min('id');
@@ -486,7 +548,7 @@ class ChannelController extends Controller
 
         // Get the previous message ID (if any)
         $previousMessageId = $channel->messages()
-            ->whereNull('parent_id')
+            ->inChannelView()
             ->where('id', '<', $messageId)
             ->max('id');
 
@@ -526,8 +588,8 @@ class ChannelController extends Controller
     private function page(Channel $channel, ?int $before = null): array
     {
         $rows = $channel->messages()
-            ->whereNull('parent_id')
-            ->with(['user:id,name', 'reactions', 'attachments'])
+            ->inChannelView()
+            ->with(['user:id,name', 'reactions', 'attachments', 'parent.user:id,name'])
             ->withCount('replies')
             ->withMax('replies', 'created_at')
             ->when($before, fn ($query) => $query->where('id', '<', $before))
@@ -544,7 +606,7 @@ class ChannelController extends Controller
 
     private function markRead(Channel $channel, User $user): void
     {
-        $latest = $channel->messages()->whereNull('parent_id')->max('id');
+        $latest = $channel->messages()->inChannelView()->max('id');
 
         if ($latest) {
             $channel->members()->updateExistingPivot($user->id, ['last_read_message_id' => $latest]);
@@ -590,6 +652,8 @@ class ChannelController extends Controller
                 'title' => $member->title,
                 'phone' => $member->phone,
                 'avatar_url' => $member->avatarUrl(),
+                'timezone' => $member->timezone,
+                'role' => $member->pivot->role,
             ]);
     }
 
@@ -600,7 +664,7 @@ class ChannelController extends Controller
             ->join('messages as m', 'm.channel_id', '=', 'cu.channel_id')
             ->where('cu.user_id', $user->id)
             ->where(fn ($query) => $query->whereNull('m.user_id')->orWhere('m.user_id', '!=', $user->id))
-            ->whereNull('m.parent_id')
+            ->where(fn ($query) => $query->whereNull('m.parent_id')->orWhere('m.also_in_channel', true))
             ->whereNull('m.removed_at')
             ->whereRaw('m.id > coalesce(cu.last_read_message_id, 0)')
             ->groupBy('cu.channel_id')
@@ -622,6 +686,7 @@ class ChannelController extends Controller
                 'name' => $channel->name,
                 'type' => $channel->type,
                 'dm_user_id' => $channel->dmPartnerId($user->id),
+                'dm_user_ids' => $channel->groupDmOthers($user->id),
                 'unread' => (int) ($unread[$channel->id] ?? 0),
                 'starred' => isset($settings[$channel->id]->starred_at),
                 'notify_all' => (bool) ($settings[$channel->id]->notify_all ?? false),

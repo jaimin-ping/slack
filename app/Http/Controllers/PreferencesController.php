@@ -21,6 +21,7 @@ class PreferencesController extends Controller
             'phone' => ['nullable', 'string', 'max:30'],
             'dnd_from' => ['nullable', 'date_format:H:i', 'required_with:dnd_to'],
             'dnd_to' => ['nullable', 'date_format:H:i', 'required_with:dnd_from'],
+            'notification_keywords' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
         $request->user()->update($data);

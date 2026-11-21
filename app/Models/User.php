@@ -56,6 +56,28 @@ class User extends Authenticatable
         return $this->belongsToMany(Channel::class)->withTimestamps();
     }
 
+    /** @return array<int, string> Lower-cased words from "Notify me about", comma separated. */
+    public function notificationKeywords(): array
+    {
+        return collect(explode(',', (string) $this->notification_keywords))
+            ->map(fn (string $word) => mb_strtolower(trim($word)))
+            ->filter(fn (string $word) => mb_strlen($word) >= 2)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    public function matchesNotificationKeyword(string $text): bool
+    {
+        foreach ($this->notificationKeywords() as $word) {
+            if (preg_match('/(?<![\pL\pN_])'.preg_quote($word, '/').'(?![\pL\pN_])/iu', $text)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function workspaces(): BelongsToMany
     {
         return $this->belongsToMany(Workspace::class, 'workspace_user')->withPivot('role')->withTimestamps();
@@ -83,6 +105,7 @@ class User extends Authenticatable
         'dnd_to',
         'status_expires_at',
         'google_id',
+        'notification_keywords',
     ];
 
     /**

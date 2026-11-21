@@ -147,6 +147,7 @@ export interface PreferenceValues {
     dnd_to?: string | null;
     dnd_until?: string | null;
     two_factor_enabled?: boolean;
+    notification_keywords?: string | null;
 }
 
 const PAUSES = [
@@ -175,6 +176,7 @@ export function PreferencesModal({
     const [phone, setPhone] = useState(user.phone ?? '');
     const [from, setFrom] = useState(user.dnd_from ?? '');
     const [to, setTo] = useState(user.dnd_to ?? '');
+    const [keywords, setKeywords] = useState(user.notification_keywords ?? '');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -185,6 +187,7 @@ export function PreferencesModal({
             setPhone(user.phone ?? '');
             setFrom(user.dnd_from ?? '');
             setTo(user.dnd_to ?? '');
+            setKeywords(user.notification_keywords ?? '');
             setError(null);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -209,6 +212,7 @@ export function PreferencesModal({
                 phone: phone.trim() || null,
                 dnd_from: from || null,
                 dnd_to: to || null,
+                notification_keywords: keywords.trim() || null,
                 timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             });
             applyTheme(theme);
@@ -284,6 +288,20 @@ export function PreferencesModal({
                         <input aria-label="End time" type="time" className={field} value={to} onChange={(e) => setTo(e.target.value)} />
                     </div>
                 </div>
+
+                <label className="block text-sm font-medium text-slate-700">
+                    My keywords
+                    <input
+                        className={`${field} mt-1 w-full`}
+                        maxLength={500}
+                        value={keywords}
+                        onChange={(e) => setKeywords(e.target.value)}
+                        placeholder="deploy, invoice, urgent"
+                    />
+                    <span className="mt-1 block text-xs font-normal text-slate-500">
+                        You'll be notified when someone posts one of these words in a conversation you're in. Separate with commas.
+                    </span>
+                </label>
 
                 <div className="grid gap-2 sm:grid-cols-2">
                     <label className="text-sm font-medium text-slate-700">

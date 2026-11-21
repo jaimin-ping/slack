@@ -25,7 +25,9 @@ import {
     UsersIcon,
 } from '@/Components/Chat/Icons';
 import Avatar from '@/Components/Chat/Avatar';
-import ChannelMembersModal from '@/Components/Chat/ChannelMembersModal';
+import ChannelMembersModal, { ChannelTab } from '@/Components/Chat/ChannelMembersModal';
+import BookmarksBar from '@/Components/Chat/BookmarksBar';
+import ProfileCard from '@/Components/Chat/ProfileCard';
 import InviteModal from '@/Components/Chat/InviteModal';
 import MessageList from '@/Components/Chat/MessageList';
 import NewChannelModal from '@/Components/Chat/NewChannelModal';
@@ -185,7 +187,7 @@ export default function Show({
         | 'directories'
         | null
     >(null);
-    const [membersOpen, setMembersOpen] = useState(false);
+    const [membersTab, setMembersTab] = useState<ChannelTab | null>(null);
     const [thread, setThread] = useState<Thread | null>(null);
     const closeThread = useCallback(() => setThread(null), []);
     const [pendingDelete, setPendingDelete] = useState<ChatMessage | null>(
@@ -222,7 +224,7 @@ export default function Show({
         setHasMore(initialHasMore);
         setTypers([]);
         setNavOpen(false);
-        setMembersOpen(false);
+        setMembersTab(null);
         setPanel(null);
     }, [initialMessages, initialHasMore]);
 
@@ -504,7 +506,10 @@ export default function Show({
             }
 
             if (message.parent_id !== null) {
-                if (message.channel_id === channel.id) applyReply(message);
+                if (message.channel_id === channel.id) {
+                    applyReply(message);
+                    if (message.also_in_channel) addMessage(message);
+                }
             } else if (message.channel_id === channel.id) {
                 addMessage(message);
                 clearTyper(message.user.id);
@@ -651,9 +656,13 @@ export default function Show({
     );
 
     const partner = members.find((m) => m.id === channel.dm_user_id);
+    const groupNames = (channel.dm_user_ids ?? [])
+        .map((id) => members.find((m) => m.id === id)?.name)
+        .filter(Boolean)
+        .join(', ');
     const title =
         channel.type === 'dm'
-            ? (partner?.name ?? 'Direct message')
+            ? (partner?.name ?? (groupNames || 'Direct message'))
             : channel.name;
     const label = channel.type === 'dm' ? title : `#${title}`;
     const people = members.filter((m) => m.id !== me.id);
@@ -705,6 +714,42 @@ export default function Show({
         );
     };
 
+    // ?message=ID from a copied link; read on the client so the server page stays cacheable.
+    const focusMessageId = useMemo(() => {
+        const id = Number(new URLSearchParams(window.location.search).get('message'));
+        return Number.isFinite(id) && id > 0 ? id : null;
+    }, [channel.id]);
+
+    const [profile, setProfile] = useState<{ userId: number; anchor: DOMRect } | null>(null);
+    const closeProfile = useCallback(() => setProfile(null), []);
+    const openProfile = (userId: number, anchor: DOMRect) =>
+        setProfile((current) => (current?.userId === userId ? null : { userId, anchor }));
+    const profileMember = profile ? members.find((m) => m.id === profile.userId) : undefined;
+    useEffect(() => setProfile(null), [channel.id]);
+
+    const copyMessageLink = (message: ChatMessage) => {
+        const base = route('channels.show', [workspace.slug, message.channel_id]);
+        const url =
+            message.parent_id !== null
+                ? `${base}?thread=${message.parent_id}`
+                : `${base}?message=${message.id}`;
+        navigator.clipboard
+            ?.writeText(url)
+            .then(() => setNotice('Link copied to clipboard.'))
+            .catch(() => setNotice(url));
+    };
+
+    const markUnread = async (message: ChatMessage) => {
+        await axios.post(route('channels.unread', [workspace.slug, channel.id]), {
+            message_id: message.id,
+        });
+        const count = messages.filter(
+            (m) => m.parent_id === null && m.id >= message.id && m.user.id !== me.id,
+        ).length;
+        setUnread((current) => ({ ...current, [channel.id]: Math.max(1, count) }));
+        setNotice('Marked as unread. It stays unread until you open the channel again.');
+    };
+
     const removeSection = async (id: number) => {
         await axios.delete(route('sections.destroy', [workspace.slug, id]));
         router.reload({ only: ['sidebar', 'extras'] });
@@ -723,7 +768,7 @@ export default function Show({
             router.reload({ only: ['channel', 'sidebar', 'members'] });
     };
 
-    const send = async (body: string, files: File[], parentId?: number) => {
+    const send = async (body: string, files: File[], parentId?: number, alsoInChannel = false) => {
         if (!parentId && files.length === 0 && /^\/[a-z]+(\s|$)/i.test(body)) {
             await runCommand(body);
             return;
@@ -733,14 +778,17 @@ export default function Show({
         form.append('body', body);
         files.forEach((file) => form.append('files[]', file));
         if (parentId) form.append('parent_id', String(parentId));
+        if (parentId && alsoInChannel) form.append('also_in_channel', '1');
 
         const { data } = await axios.post<ChatMessage>(
             route('messages.store', [workspace.slug, channel.id]),
             form,
         );
 
-        if (data.parent_id !== null) applyReply(data);
-        else addMessage(data);
+        if (data.parent_id !== null) {
+            applyReply(data);
+            if (data.also_in_channel) addMessage(data);
+        } else addMessage(data);
     };
 
     const openThread = async (message: ChatMessage) => {
@@ -1036,8 +1084,8 @@ export default function Show({
                                     ) : (
                                         <button
                                             type="button"
-                                            title="Channel settings"
-                                            onClick={() => setModal('settings')}
+                                            title="Channel details"
+                                            onClick={() => setMembersTab('about')}
                                             className="truncate rounded hover:bg-slate-100"
                                         >
                                             {title}
@@ -1111,7 +1159,7 @@ export default function Show({
                             {channel.type !== 'dm' && (
                                 <button
                                     type="button"
-                                    onClick={() => setMembersOpen(true)}
+                                    onClick={() => setMembersTab('members')}
                                     aria-haspopup="dialog"
                                     aria-label={`${channelMembers.length} members`}
                                     title="View all members of this channel"
@@ -1162,6 +1210,16 @@ export default function Show({
                             )}
 
                         </header>
+
+                        {channel.type !== 'dm' && (
+                            <BookmarksBar
+                                key={channel.id}
+                                slug={workspace.slug}
+                                channelId={channel.id}
+                                initial={channel.bookmarks ?? []}
+                                canEdit={!channel.archived}
+                            />
+                        )}
 
                         <div
                             role="tablist"
@@ -1216,11 +1274,15 @@ export default function Show({
                                 onPin={pinMessage}
                                 onSave={saveMessage}
                                 onForward={setForwarding}
+                                onCopyLink={copyMessageLink}
+                                onMarkUnread={markUnread}
+                                focusId={focusMessageId}
                                 onAttachmentSave={saveAttachment}
                                 onAttachmentTodo={addAttachmentTodo}
                                 onAttachmentShare={shareAttachment}
                                 onAttachmentDetails={viewAttachmentDetails}
                                 onAttachmentDelete={deleteAttachment}
+                                onProfile={openProfile}
                                 onCreateTask={(message) => {
                                     setTaskDraft({
                                         title: (message.body.split('\n')[0] || 'Follow up on this message').slice(0, 200),
@@ -1298,8 +1360,8 @@ export default function Show({
                             members={members}
                             people={mentionable}
                             onClose={closeThread}
-                            onSend={(body, files) =>
-                                send(body, files, thread.parent.id)
+                            onSend={(body, files, alsoInChannel) =>
+                                send(body, files, thread.parent.id, alsoInChannel)
                             }
                             onReact={react}
                             onEdit={editMessage}
@@ -1314,6 +1376,7 @@ export default function Show({
                             onAttachmentShare={shareAttachment}
                             onAttachmentDetails={viewAttachmentDetails}
                             onAttachmentDelete={deleteAttachment}
+                            onProfile={openProfile}
                         />
                     )}
 
@@ -1418,15 +1481,31 @@ export default function Show({
                     onShare={handleShareFile}
                 />
             )}
+            {profile && profileMember && (
+                <ProfileCard
+                    member={profileMember}
+                    anchor={profile.anchor}
+                    meId={me.id}
+                    online={online.has(profileMember.id)}
+                    onMessage={(member) => {
+                        setProfile(null);
+                        router.post(route('channels.direct', [workspace.slug, member.id]));
+                    }}
+                    onSetStatus={() => setModal('status')}
+                    onClose={closeProfile}
+                />
+            )}
             <ChannelMembersModal
-                show={membersOpen && channel.type !== 'dm'}
+                show={membersTab !== null && channel.type !== 'dm'}
+                initialTab={membersTab ?? 'members'}
+                onOpenSettings={() => setModal('settings')}
                 workspace={workspace}
                 channel={channel}
                 meId={me.id}
                 members={members}
                 channelMemberIds={channelMemberIds}
                 online={online}
-                onClose={() => setMembersOpen(false)}
+                onClose={() => setMembersTab(null)}
             />
             <MembersModal
                 show={modal === 'members'}

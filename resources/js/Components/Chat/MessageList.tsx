@@ -22,7 +22,7 @@ import {
     MessageAttachment,
     MessageCard,
 } from '@/types/chat';
-import { KeyboardEvent, MouseEvent as ReactMouseEvent, useLayoutEffect, useRef, useState } from 'react';
+import { KeyboardEvent, MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 interface Props {
     messages: ChatMessage[];
@@ -48,12 +48,84 @@ interface Props {
     onAttachmentDelete?: (attachment: MessageAttachment) => void;
     /** Opens the task panel with a new task linked to this message. */
     onCreateTask?: (message: ChatMessage) => void;
+    onCopyLink?: (message: ChatMessage) => void;
+    onMarkUnread?: (message: ChatMessage) => void;
+    /** Message to scroll to and briefly highlight (from a shared link). */
+    focusId?: number | null;
+    /** Opens the profile card for a person, anchored to what was clicked. */
+    onProfile?: (userId: number, anchor: DOMRect) => void;
+}
+
+function MoreMenu({
+    message,
+    onCopyLink,
+    onMarkUnread,
+    onClose,
+}: {
+    message: ChatMessage;
+    onCopyLink?: (message: ChatMessage) => void;
+    onMarkUnread?: (message: ChatMessage) => void;
+    onClose: () => void;
+}) {
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const away = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+        };
+        const esc = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && onClose();
+        document.addEventListener('mousedown', away);
+        document.addEventListener('keydown', esc);
+        return () => {
+            document.removeEventListener('mousedown', away);
+            document.removeEventListener('keydown', esc);
+        };
+    }, [onClose]);
+
+    const item = 'block w-full px-4 py-1.5 text-left text-sm text-slate-800 hover:bg-sky-700 hover:text-white';
+    const run = (fn: () => void) => () => {
+        fn();
+        onClose();
+    };
+
+    return (
+        <div
+            ref={ref}
+            role="menu"
+            className="absolute right-0 top-8 z-30 w-52 rounded-lg border border-slate-200 bg-white py-1 shadow-xl"
+        >
+            {onMarkUnread && message.parent_id === null && (
+                <button type="button" role="menuitem" className={item} onClick={run(() => onMarkUnread(message))}>
+                    Mark unread
+                </button>
+            )}
+            {onCopyLink && (
+                <button type="button" role="menuitem" className={item} onClick={run(() => onCopyLink(message))}>
+                    Copy link
+                </button>
+            )}
+            {message.body && (
+                <button
+                    type="button"
+                    role="menuitem"
+                    className={item}
+                    onClick={run(() => navigator.clipboard?.writeText(message.body).catch(() => {}))}
+                >
+                    Copy text
+                </button>
+            )}
+        </div>
+    );
 }
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 const LONG_MESSAGE_CHARS = 600;
 const LONG_MESSAGE_LINES = 8;
 const QUICK_EMOJIS = ['✅', '👀', '👍'];
+
+/** A reply shown in the channel opens its parent's thread. openThread only needs the id. */
+const threadOf = (message: ChatMessage): ChatMessage =>
+    message.parent_id !== null ? { ...message, id: message.parent_id } : message;
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const day = (iso: string) =>
@@ -299,6 +371,10 @@ export default function MessageList({
     onAttachmentDetails,
     onAttachmentDelete,
     onCreateTask,
+    onCopyLink,
+    onMarkUnread,
+    focusId,
+    onProfile,
 }: Props) {
     const scroller = useRef<HTMLDivElement>(null);
     const nearBottom = useRef(true);
@@ -306,6 +382,22 @@ export default function MessageList({
     const [loading, setLoading] = useState(false);
     const [pickerFor, setPickerFor] = useState<number | null>(null);
     const [editingId, setEditingId] = useState<number | null>(null);
+    const [menuFor, setMenuFor] = useState<number | null>(null);
+    const [flash, setFlash] = useState<number | null>(null);
+    const focused = useRef<number | null>(null);
+
+    // Jump to a linked message once it is on screen.
+    useEffect(() => {
+        if (!focusId || focused.current === focusId) return;
+        const el = scroller.current?.querySelector<HTMLElement>(`[data-message-id="${focusId}"]`);
+        if (!el) return;
+        focused.current = focusId;
+        nearBottom.current = false;
+        el.scrollIntoView({ block: 'center' });
+        setFlash(focusId);
+        const timer = window.setTimeout(() => setFlash(null), 2500);
+        return () => window.clearTimeout(timer);
+    }, [focusId, messages]);
 
     useLayoutEffect(() => {
         const el = scroller.current;
@@ -400,7 +492,10 @@ export default function MessageList({
                         )}
 
                         <div
-                            className={`group relative flex gap-2 px-5 py-0.5 hover:bg-slate-50 ${grouped ? '' : 'mt-2 pt-1'}`}
+                            data-message-id={message.id}
+                            className={`group relative flex gap-2 px-5 py-0.5 transition-colors duration-700 ${
+                                flash === message.id ? 'bg-amber-100' : 'hover:bg-slate-50'
+                            } ${grouped ? '' : 'mt-2 pt-1'}`}
                         >
                             {grouped ? (
                                 <time
@@ -413,17 +508,41 @@ export default function MessageList({
                                 message.agent ? (
                                     <AgentAvatar agent={message.agent} className="h-9 w-9 rounded-lg" />
                                 ) : (
-                                    <Avatar
-                                        user={members.find((m) => m.id === message.user.id) ?? message.user}
-                                        className="h-9 w-9 rounded-lg"
-                                    />
+                                    onProfile && !message.is_bot ? (
+                                        <button
+                                            type="button"
+                                            aria-label={`View profile of ${message.user.name}`}
+                                            onClick={(e) => onProfile(message.user.id, e.currentTarget.getBoundingClientRect())}
+                                            className="h-9 shrink-0 self-start rounded-lg hover:opacity-90"
+                                        >
+                                            <Avatar
+                                                user={members.find((m) => m.id === message.user.id) ?? message.user}
+                                                className="h-9 w-9 rounded-lg"
+                                            />
+                                        </button>
+                                    ) : (
+                                        <Avatar
+                                            user={members.find((m) => m.id === message.user.id) ?? message.user}
+                                            className="h-9 w-9 rounded-lg"
+                                        />
+                                    )
                                 )
                             )}
 
                             <div className="min-w-0 flex-1">
                                 {!grouped && (
                                     <div className="flex items-baseline gap-2">
-                                        <span className="text-[15px] font-bold text-slate-900">{message.user.name}</span>
+                                        {onProfile && !message.is_bot && !message.agent ? (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => onProfile(message.user.id, e.currentTarget.getBoundingClientRect())}
+                                                className="text-[15px] font-bold text-slate-900 hover:underline"
+                                            >
+                                                {message.user.name}
+                                            </button>
+                                        ) : (
+                                            <span className="text-[15px] font-bold text-slate-900">{message.user.name}</span>
+                                        )}
                                         {message.agent ? (
                                             <span
                                                 className="rounded bg-violet-100 px-1 text-[10px] font-semibold text-violet-700"
@@ -446,6 +565,22 @@ export default function MessageList({
                                             {time(message.created_at)}
                                         </time>
                                     </div>
+                                )}
+
+                                {message.also_in_channel && message.thread_parent && onReply && (
+                                    <button
+                                        type="button"
+                                        onClick={() => onReply(threadOf(message))}
+                                        className="block max-w-full truncate text-left text-[13px] text-slate-500 hover:underline"
+                                    >
+                                        replied to a thread:{' '}
+                                        <span className="text-sky-700">
+                                            {message.thread_parent.user_name}: {message.thread_parent.excerpt || 'View thread'}
+                                        </span>
+                                    </button>
+                                )}
+                                {message.also_in_channel && !onReply && (
+                                    <p className="text-[13px] text-slate-500">Also sent to the channel</p>
                                 )}
 
                                 {message.pinned && (
@@ -533,7 +668,7 @@ export default function MessageList({
                                 {onReply && message.reply_count > 0 && (
                                     <button
                                         type="button"
-                                        onClick={() => onReply(message)}
+                                        onClick={() => onReply(threadOf(message))}
                                         className="mt-1 flex items-center gap-2 rounded border border-transparent px-1 py-0.5 text-[13px] hover:border-slate-200 hover:bg-white"
                                     >
                                         <span className="font-bold text-sky-700">
@@ -551,7 +686,7 @@ export default function MessageList({
                                 className={`absolute -top-3 right-5 z-10 items-center gap-0.5 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm ${
                                     message.removed || editingId === message.id
                                         ? 'hidden'
-                                        : `group-hover:flex group-focus-within:flex ${pickerFor === message.id ? 'flex' : 'hidden'}`
+                                        : `group-hover:flex group-focus-within:flex ${pickerFor === message.id || menuFor === message.id ? 'flex' : 'hidden'}`
                                 }`}
                             >
                                 {QUICK_EMOJIS.map((emoji) => (
@@ -579,7 +714,7 @@ export default function MessageList({
                                         type="button"
                                         aria-label="Reply in thread"
                                         title="Reply in thread"
-                                        onClick={() => onReply(message)}
+                                        onClick={() => onReply(threadOf(message))}
                                         className="rounded p-1 text-slate-600 hover:bg-slate-100"
                                     >
                                         <ChatIcon className="h-4 w-4" />
@@ -644,6 +779,25 @@ export default function MessageList({
                                     >
                                         <TrashIcon className="h-4 w-4" />
                                     </button>
+                                )}
+                                <button
+                                    type="button"
+                                    aria-label="More actions"
+                                    title="More actions"
+                                    aria-haspopup="menu"
+                                    aria-expanded={menuFor === message.id}
+                                    onClick={() => setMenuFor(menuFor === message.id ? null : message.id)}
+                                    className="rounded p-1 text-slate-600 hover:bg-slate-100"
+                                >
+                                    <MoreVerticalIcon className="h-4 w-4" />
+                                </button>
+                                {menuFor === message.id && (
+                                    <MoreMenu
+                                        message={message}
+                                        onCopyLink={onCopyLink}
+                                        onMarkUnread={onMarkUnread}
+                                        onClose={() => setMenuFor(null)}
+                                    />
                                 )}
                                 {pickerFor === message.id && (
                                     <EmojiDialog onClose={() => setPickerFor(null)} onPick={(emoji) => react(message.id, emoji)} />

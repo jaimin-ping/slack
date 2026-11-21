@@ -10,6 +10,7 @@ export interface User {
     dnd_until?: string | null;
     dnd_from?: string | null;
     dnd_to?: string | null;
+    notification_keywords?: string | null;
 }
 
 export type PageProps<

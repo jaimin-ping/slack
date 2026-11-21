@@ -2,16 +2,18 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class Message extends Model
 {
     protected $fillable = [
-        'channel_id', 'user_id', 'body', 'parent_id', 'webhook_id', 'bot_name', 'cards', 'edited_at', 'removed_at',
+        'channel_id', 'user_id', 'body', 'parent_id', 'also_in_channel', 'webhook_id', 'bot_name', 'cards', 'edited_at', 'removed_at',
         'pinned_at', 'pinned_by', 'link_preview', 'ai_agent_id',
     ];
 
@@ -19,6 +21,7 @@ class Message extends Model
     {
         return [
             'parent_id' => 'integer',
+            'also_in_channel' => 'boolean',
             'cards' => 'array',
             'link_preview' => 'array',
             'edited_at' => 'datetime',
@@ -51,6 +54,17 @@ class Message extends Model
     public function attachments(): HasMany
     {
         return $this->hasMany(Attachment::class);
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_id');
+    }
+
+    /** Top-level messages plus thread replies that were also sent to the channel. */
+    public function scopeInChannelView(Builder $query, string $prefix = ''): Builder
+    {
+        return $query->where(fn (Builder $q) => $q->whereNull($prefix.'parent_id')->orWhere($prefix.'also_in_channel', true));
     }
 
     public function replies(): HasMany
@@ -124,6 +138,24 @@ class Message extends Model
                 : null,
             // Set on a new reply, so clients can update the parent's count without guessing.
             'parent_reply_count' => $this->parent_reply_count,
+            'also_in_channel' => (bool) $this->also_in_channel,
+            // What the channel shows above a reply that was also sent there.
+            'thread_parent' => $this->also_in_channel && $this->parent_id ? $this->threadParentPayload() : null,
+        ];
+    }
+
+    /** @return array{id: int, user_name: string, excerpt: string}|null */
+    private function threadParentPayload(): ?array
+    {
+        $parent = $this->parent;
+        if (! $parent) {
+            return null;
+        }
+
+        return [
+            'id' => $parent->id,
+            'user_name' => $parent->user?->name ?? $parent->bot_name ?? 'App',
+            'excerpt' => $parent->removed_at ? 'This message was deleted.' : Str::limit((string) $parent->body, 120),
         ];
     }
 }

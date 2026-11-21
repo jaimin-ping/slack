@@ -393,18 +393,48 @@ export function NewDmModal({
         p.name.toLowerCase().includes(term.trim().toLowerCase()),
     );
 
-    const start = (id: number) => {
-        onClose();
+    const [picked, setPicked] = useState<number[]>([]);
+
+    const close = () => {
         setTerm('');
-        router.post(route('channels.direct', [workspace.slug, id]));
+        setPicked([]);
+        onClose();
+    };
+
+    const toggle = (id: number) =>
+        setPicked((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+
+    // One person opens a DM; two or more open a group DM, like Slack.
+    const start = (ids: number[]) => {
+        if (ids.length === 0) return;
+        close();
+        if (ids.length === 1) router.post(route('channels.direct', [workspace.slug, ids[0]]));
+        else router.post(route('channels.direct.group', workspace.slug), { user_ids: ids });
     };
 
     return (
-        <Modal show={show} onClose={onClose} maxWidth="md">
+        <Modal show={show} onClose={close} maxWidth="md">
             <div className="p-5">
-                <h2 className="mb-3 text-lg font-semibold text-slate-900">
+                <h2 className="mb-1 text-lg font-semibold text-slate-900">
                     New message
                 </h2>
+                <p className="mb-3 text-sm text-slate-500">
+                    Pick one person for a direct message, or several for a group conversation.
+                </p>
+                {picked.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-1">
+                        {picked.map((id) => (
+                            <button
+                                key={id}
+                                type="button"
+                                onClick={() => toggle(id)}
+                                className="flex items-center gap-1 rounded bg-sky-50 px-2 py-0.5 text-xs text-sky-800 hover:bg-sky-100"
+                            >
+                                {people.find((p) => p.id === id)?.name} <span aria-hidden>×</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
                 <input
                     aria-label="Find a person"
                     className={field}
@@ -417,9 +447,19 @@ export function NewDmModal({
                         <li key={person.id}>
                             <button
                                 type="button"
-                                onClick={() => start(person.id)}
-                                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-slate-800 hover:bg-slate-100"
+                                onClick={() => toggle(person.id)}
+                                aria-pressed={picked.includes(person.id)}
+                                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-slate-800 hover:bg-slate-100 ${
+                                    picked.includes(person.id) ? 'bg-sky-50' : ''
+                                }`}
                             >
+                                <input
+                                    type="checkbox"
+                                    readOnly
+                                    tabIndex={-1}
+                                    checked={picked.includes(person.id)}
+                                    className="rounded border-slate-300 text-sky-700"
+                                />
                                 <Avatar
                                     user={person}
                                     className="h-6 w-6 rounded text-xs"
@@ -439,7 +479,7 @@ export function NewDmModal({
                             type="button"
                             className="text-sky-700 hover:underline"
                             onClick={() => {
-                                onClose();
+                                close();
                                 onInvite();
                             }}
                         >
@@ -451,6 +491,25 @@ export function NewDmModal({
                     <p className="mt-3 text-sm text-slate-500">
                         No one matches “{term.trim()}”.
                     </p>
+                )}
+                {people.length > 0 && (
+                    <div className="mt-4 flex justify-end gap-2">
+                        <button
+                            type="button"
+                            onClick={close}
+                            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            disabled={picked.length === 0}
+                            onClick={() => start(picked)}
+                            className="rounded-md bg-teal-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+                        >
+                            {picked.length > 1 ? `Start group (${picked.length + 1})` : 'Open'}
+                        </button>
+                    </div>
                 )}
             </div>
         </Modal>

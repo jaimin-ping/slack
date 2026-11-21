@@ -8,7 +8,7 @@ import { ReactNode, useEffect, useState } from 'react';
 
 interface ActivityItem {
     id: number;
-    type: 'mention' | 'reply';
+    type: 'mention' | 'reply' | 'keyword';
     read: boolean;
     message: ChatMessage;
     channel_label: string;
@@ -189,7 +189,7 @@ export default function InfoPanel({
                             href={channelUrl(item.message.channel_id, item.message.parent_id)}
                         >
                             <span className="block text-xs text-slate-500">
-                                {item.type === 'mention' ? 'Mention' : 'Thread reply'} in {item.channel_label} ·{' '}
+                                {item.type === 'mention' ? 'Mention' : item.type === 'keyword' ? 'Keyword' : 'Thread reply'} in {item.channel_label} ·{' '}
                                 {when(item.message.created_at)}
                             </span>
                             <span className="block font-semibold text-slate-900">{item.message.user.name}</span>

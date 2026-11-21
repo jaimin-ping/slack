@@ -1,7 +1,7 @@
 import Composer from '@/Components/Chat/Composer';
 import MessageList from '@/Components/Chat/MessageList';
 import { ChatMessage, ChatUser, MessageAttachment } from '@/types/chat';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface Props {
     parent: ChatMessage;
@@ -11,7 +11,7 @@ interface Props {
     members: ChatUser[];
     people: ChatUser[];
     onClose: () => void;
-    onSend: (body: string, files: File[]) => Promise<void>;
+    onSend: (body: string, files: File[], alsoInChannel: boolean) => Promise<void>;
     onReact: (messageId: number, emoji: string) => void;
     onEdit: (messageId: number, body: string) => Promise<void>;
     onDelete: (message: ChatMessage) => void;
@@ -25,6 +25,7 @@ interface Props {
     onAttachmentShare?: (attachment: MessageAttachment) => void;
     onAttachmentDetails?: (attachment: MessageAttachment) => void;
     onAttachmentDelete?: (attachment: MessageAttachment) => void;
+    onProfile?: (userId: number, anchor: DOMRect) => void;
 }
 
 export default function ThreadPane({
@@ -49,7 +50,10 @@ export default function ThreadPane({
     onAttachmentShare,
     onAttachmentDetails,
     onAttachmentDelete,
+    onProfile,
 }: Props) {
+    const [alsoInChannel, setAlsoInChannel] = useState(false);
+
     useEffect(() => {
         const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
         document.addEventListener('keydown', key);
@@ -95,10 +99,28 @@ export default function ThreadPane({
                 onAttachmentShare={onAttachmentShare}
                 onAttachmentDetails={onAttachmentDetails}
                 onAttachmentDelete={onAttachmentDelete}
+                onProfile={onProfile}
             />
 
             <div className="pb-3">
-                <Composer key={`reply-${parent.id}`} placeholder="Reply…" members={people} onSend={onSend} />
+                <Composer
+                    key={`reply-${parent.id}`}
+                    placeholder="Reply…"
+                    members={people}
+                    onSend={async (body, files) => {
+                        await onSend(body, files, alsoInChannel);
+                        setAlsoInChannel(false);
+                    }}
+                />
+                <label className="mx-4 mt-1 flex w-fit cursor-pointer items-center gap-2 text-[13px] text-slate-600">
+                    <input
+                        type="checkbox"
+                        checked={alsoInChannel}
+                        onChange={(e) => setAlsoInChannel(e.target.checked)}
+                        className="rounded border-slate-300 text-teal-700 focus:ring-teal-600"
+                    />
+                    Also send to {channelLabel}
+                </label>
             </div>
         </aside>
     );

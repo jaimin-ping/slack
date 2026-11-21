@@ -18,7 +18,7 @@ class ActivityRecorder
     public function record(Message $message): void
     {
         $channel = $message->channel;
-        $members = $channel->members()->get(['users.id', 'users.name', 'users.is_away']);
+        $members = $channel->members()->get(['users.id', 'users.name', 'users.is_away', 'users.notification_keywords']);
         $memberIds = $members->pluck('id')->all();
         $recipients = [];
 
@@ -62,6 +62,13 @@ class ActivityRecorder
                     $recipients[$member->id] = 'mention';
                 }
             });
+
+        // Keyword notifications: a word someone asked to hear about, unless they already get this message.
+        $members->each(function (User $member) use ($message, &$recipients) {
+            if (! isset($recipients[$member->id]) && $member->matchesNotificationKeyword((string) $message->body)) {
+                $recipients[$member->id] = 'keyword';
+            }
+        });
 
         unset($recipients[$message->user_id]);
         $recipients = array_intersect_key($recipients, array_flip($memberIds));

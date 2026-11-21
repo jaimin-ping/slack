@@ -20,8 +20,26 @@ class WorkspaceController extends Controller
     {
         $invitations->acceptFor($request->user());
 
+        $workspaces = $request->user()->workspaces()
+            ->withCount('members')
+            ->with(['members' => fn ($q) => $q->orderBy('users.id')->limit(5)])
+            ->orderBy('name')
+            ->get(['workspaces.id', 'name', 'slug']);
+
         return Inertia::render('Dashboard', [
-            'workspaces' => $request->user()->workspaces()->orderBy('name')->get(['workspaces.id', 'name', 'slug']),
+            'workspaces' => $workspaces->map(fn (Workspace $workspace) => [
+                'id' => $workspace->id,
+                'name' => $workspace->name,
+                'slug' => $workspace->slug,
+                'role' => $workspace->pivot->role,
+                'members_count' => $workspace->members_count,
+                // A few faces for the card, like Slack's launcher.
+                'preview' => $workspace->members->take(5)->map(fn ($member) => [
+                    'id' => $member->id,
+                    'name' => $member->name,
+                    'avatar_url' => $member->avatarUrl(),
+                ])->values(),
+            ]),
         ]);
     }
 

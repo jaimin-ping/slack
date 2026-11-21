@@ -7,6 +7,7 @@ use App\Http\Controllers\AI\AgentMemoryController;
 use App\Http\Controllers\AI\ApprovalController;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\AvatarController;
+use App\Http\Controllers\BookmarkController;
 use App\Http\Controllers\CanvasController;
 use App\Http\Controllers\ChannelController;
 use App\Http\Controllers\ExportController;
@@ -109,6 +110,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/w/{workspace:slug}/webhooks', [WebhookController::class, 'store'])->name('webhooks.store');
     Route::delete('/w/{workspace:slug}/webhooks/{webhook}', [WebhookController::class, 'destroy'])->name('webhooks.destroy');
     Route::post('/w/{workspace:slug}/dm/{user}', [ChannelController::class, 'direct'])->name('channels.direct');
+    Route::post('/w/{workspace:slug}/dm-group', [ChannelController::class, 'groupDirect'])->name('channels.direct.group');
 
     // Workspace tasks, shared with the mobile API.
     Route::prefix('/w/{workspace:slug}/tasks')->name('tasks.')->group(function () {
@@ -177,6 +179,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/w/{workspace:slug}/c/{channel}/command', [SlashCommandController::class, 'run'])->middleware('throttle:60,1')->name('channels.command');
         Route::post('/w/{workspace:slug}/c/{channel}/section', [WorkspaceToolsController::class, 'moveToSection'])->name('channels.section');
         Route::post('/w/{workspace:slug}/c/{channel}/read', [ChannelController::class, 'read'])->name('channels.read');
+        Route::post('/w/{workspace:slug}/c/{channel}/bookmarks', [BookmarkController::class, 'store'])->name('bookmarks.store');
+        Route::delete('/w/{workspace:slug}/c/{channel}/bookmarks/{bookmark}', [BookmarkController::class, 'destroy'])->name('bookmarks.destroy');
+        Route::post('/w/{workspace:slug}/c/{channel}/unread', [ChannelController::class, 'unread'])->name('channels.unread');
         Route::post('/w/{workspace:slug}/c/{channel}/huddle', [ChannelController::class, 'huddle'])->middleware('throttle:20,1')->name('channels.huddle');
         Route::post('/w/{workspace:slug}/c/{channel}/huddle/reply', [ChannelController::class, 'huddleReply'])->middleware('throttle:20,1')->name('channels.huddle.reply');
         Route::post('/w/{workspace:slug}/c/{channel}/star', [ChannelController::class, 'star'])->name('channels.star');

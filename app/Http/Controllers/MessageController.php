@@ -47,6 +47,7 @@ class MessageController extends Controller
                 // Replies attach to a top-level message in this channel; threads do not nest.
                 Rule::exists('messages', 'id')->where('channel_id', $channel->id)->whereNull('parent_id'),
             ],
+            'also_in_channel' => ['sometimes', 'boolean'],
         ]);
 
         $parentId = $data['parent_id'] ?? null;
@@ -56,6 +57,8 @@ class MessageController extends Controller
                 'user_id' => $user->id,
                 'body' => trim($data['body'] ?? ''),
                 'parent_id' => $parentId,
+                // "Also send to #channel" only means something for a thread reply.
+                'also_in_channel' => $parentId !== null && $request->boolean('also_in_channel'),
             ]);
 
             foreach ($request->file('files', []) as $file) {
@@ -74,7 +77,9 @@ class MessageController extends Controller
 
         if ($parentId) {
             $message->parent_reply_count = Message::where('parent_id', $parentId)->count();
-        } else {
+        }
+
+        if (! $parentId || $message->also_in_channel) {
             $channel->members()->updateExistingPivot($user->id, ['last_read_message_id' => $message->id]);
         }
 

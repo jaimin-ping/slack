@@ -19,6 +19,8 @@ export interface WorkspaceMember extends ChatUser {
     in_dnd?: boolean;
     title?: string | null;
     phone?: string | null;
+    timezone?: string | null;
+    role?: 'owner' | 'admin' | 'member' | string;
 }
 
 export interface MessageReaction {
@@ -61,6 +63,9 @@ export interface ChatMessage {
     reply_count: number;
     last_reply_at: string | null;
     parent_reply_count: number | null;
+    /** A thread reply that was also sent to the channel. */
+    also_in_channel?: boolean;
+    thread_parent?: { id: number; user_name: string; excerpt: string } | null;
 }
 
 export interface MessageAgent {
@@ -81,11 +86,24 @@ export interface ActiveChannel {
     name: string | null;
     type: 'public' | 'private' | 'dm';
     dm_user_id: number | null;
+    /** Other people in a group DM (3+ people); null otherwise. */
+    dm_user_ids?: number[] | null;
     topic?: string | null;
+    description?: string | null;
+    created_by_name?: string | null;
+    created_at?: string | null;
+    is_default?: boolean;
+    bookmarks?: ChannelBookmark[];
     can_manage?: boolean;
     can_delete?: boolean;
     can_leave?: boolean;
     archived?: boolean;
+}
+
+export interface ChannelBookmark {
+    id: number;
+    title: string;
+    url: string;
 }
 
 export interface SidebarChannel extends ActiveChannel {
